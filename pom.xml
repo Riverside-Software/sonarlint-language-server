@@ -369,6 +369,18 @@
       </plugin>
     </plugins>
   </build>
+
+  <distributionManagement>
+    <snapshotRepository>
+      <id>rssw</id>
+      <url>https://nexus.rssw.eu/repository/maven-snapshots/</url>
+    </snapshotRepository>
+    <repository>
+      <id>rssw</id>
+      <url>https://nexus.rssw.eu/repository/maven-releases/</url>
+    </repository>
+  </distributionManagement>
+
   <profiles>
     <profile>
       <id>coverage</id>
