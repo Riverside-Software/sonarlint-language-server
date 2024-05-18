@@ -30,34 +30,12 @@ public class EnabledLanguages {
   }
 
   private static final Language[] STANDALONE_LANGUAGES = {
-    Language.AZURERESOURCEMANAGER,
-    Language.CPP,
-    Language.C,
-    Language.CLOUDFORMATION,
-    Language.CS,
-    Language.CSS,
-    Language.DOCKER,
-    Language.GO,
-    Language.HTML,
-    Language.IPYTHON,
-    Language.JAVA,
-    Language.JS,
-    Language.JSON,
-    Language.KUBERNETES,
-    Language.PHP,
-    Language.PYTHON,
-    Language.SECRETS,
-    Language.TERRAFORM,
-    Language.TS,
-    Language.XML,
-    Language.YAML,
+    Language.OPENEDGE,
+    Language.OPENEDGE_DB
   };
 
   private static final Language[] CONNECTED_ADDITIONAL_LANGUAGES = {
-    Language.APEX,
-    Language.COBOL,
-    Language.PLSQL,
-    Language.TSQL
+
   };
 
 

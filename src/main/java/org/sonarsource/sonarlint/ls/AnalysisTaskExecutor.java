@@ -35,6 +35,7 @@ import org.sonarsource.sonarlint.core.commons.api.progress.CanceledException;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.hotspot.RaisedHotspotDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.issue.RaisedFindingDto;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.GetJavaConfigResponse;
+import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.GetOpenEdgeConfigResponse;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.connected.ProjectBinding;
 import org.sonarsource.sonarlint.ls.connected.ProjectBindingManager;
@@ -46,6 +47,7 @@ import org.sonarsource.sonarlint.ls.java.JavaConfigCache;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.NotebookDiagnosticPublisher;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
+import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
 import org.sonarsource.sonarlint.ls.progress.ProgressFacade;
 import org.sonarsource.sonarlint.ls.progress.ProgressManager;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
@@ -68,6 +70,7 @@ public class AnalysisTaskExecutor {
   private final WorkspaceFoldersManager workspaceFoldersManager;
   private final ProjectBindingManager bindingManager;
   private final JavaConfigCache javaConfigCache;
+  private final OpenEdgeConfigCache oeConfigCache;
   private final SettingsManager settingsManager;
   private final IssuesCache issuesCache;
   private final HotspotsCache securityHotspotsCache;
@@ -81,7 +84,7 @@ public class AnalysisTaskExecutor {
   private final AnalysisTasksCache analysisTasksCache;
 
   public AnalysisTaskExecutor(ScmIgnoredCache filesIgnoredByScmCache, LanguageClientLogger clientLogger,
-    WorkspaceFoldersManager workspaceFoldersManager, ProjectBindingManager bindingManager, JavaConfigCache javaConfigCache, SettingsManager settingsManager,
+    WorkspaceFoldersManager workspaceFoldersManager, ProjectBindingManager bindingManager, JavaConfigCache javaConfigCache, OpenEdgeConfigCache oeConfigCache, SettingsManager settingsManager,
     IssuesCache issuesCache, HotspotsCache securityHotspotsCache, TaintVulnerabilitiesCache taintVulnerabilitiesCache, DiagnosticPublisher diagnosticPublisher,
     SonarLintExtendedLanguageClient lsClient, OpenNotebooksCache openNotebooksCache, NotebookDiagnosticPublisher notebookDiagnosticPublisher,
     ProgressManager progressManager, BackendServiceFacade backendServiceFacade, AnalysisTasksCache analysisTasksCache) {
@@ -90,6 +93,7 @@ public class AnalysisTaskExecutor {
     this.workspaceFoldersManager = workspaceFoldersManager;
     this.bindingManager = bindingManager;
     this.javaConfigCache = javaConfigCache;
+    this.oeConfigCache = oeConfigCache;
     this.settingsManager = settingsManager;
     this.issuesCache = issuesCache;
     this.securityHotspotsCache = securityHotspotsCache;
@@ -178,14 +182,15 @@ public class AnalysisTaskExecutor {
 
   private void analyze(AnalysisTask task, Optional<WorkspaceFolderWrapper> workspaceFolder, Optional<ProjectBinding> binding, Map<URI, VersionedOpenFile> filesToAnalyze) {
     Map<Boolean, Map<URI, VersionedOpenFile>> splitJavaAndNonJavaFiles = filesToAnalyze.entrySet().stream().collect(partitioningBy(
-      entry -> entry.getValue().isJava(),
+      entry -> entry.getValue().isOpenEdge(),
       toMap(Entry::getKey, Entry::getValue)));
     Map<URI, VersionedOpenFile> javaFiles = ofNullable(splitJavaAndNonJavaFiles.get(true)).orElse(Map.of());
     Map<URI, VersionedOpenFile> nonJavaFiles = ofNullable(splitJavaAndNonJavaFiles.get(false)).orElse(Map.of());
 
-    Map<URI, GetJavaConfigResponse> javaFilesWithConfig = collectJavaFilesWithConfig(javaFiles);
+    Map<URI, GetJavaConfigResponse> javaFilesWithConfig = new HashMap<>();
+    Map<URI, GetOpenEdgeConfigResponse> oeFilesWithConfig = collectOpenEdgeFilesWithConfig(javaFiles);
     var javaFilesWithoutConfig = javaFiles.entrySet()
-      .stream().filter(it -> !javaFilesWithConfig.containsKey(it.getKey()))
+      .stream().filter(it -> !oeFilesWithConfig.containsKey(it.getKey()))
       .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
     nonJavaFiles.putAll(javaFilesWithoutConfig);
     var settings = workspaceFolder.map(WorkspaceFolderWrapper::getSettings)
@@ -193,15 +198,15 @@ public class AnalysisTaskExecutor {
 
     nonJavaFiles = excludeCAndCppFilesIfMissingCompilationDatabase(nonJavaFiles, settings);
 
-    if (nonJavaFiles.isEmpty() && javaFilesWithConfig.isEmpty()) {
+    if (nonJavaFiles.isEmpty() && oeFilesWithConfig.isEmpty()) {
       return;
     }
 
     // We need to run one separate analysis per Java module. Analyze non Java files with the first Java module, if any
-    Map<String, Set<URI>> javaFilesByProjectRoot = javaFilesWithConfig.entrySet().stream()
-      .collect(groupingBy(e -> e.getValue().getProjectRoot(), mapping(Entry::getKey, toSet())));
+    Map<String, Set<URI>> javaFilesByProjectRoot = oeFilesWithConfig.entrySet().stream()
+      .collect(groupingBy(e -> e.getValue().getProjectInfo().getProjectRoot(), mapping(Entry::getKey, toSet())));
     if (javaFilesByProjectRoot.isEmpty()) {
-      analyzeSingleModule(task, workspaceFolder, settings, binding, nonJavaFiles, javaFilesWithConfig);
+      analyzeSingleModule(task, workspaceFolder, settings, binding, nonJavaFiles, javaFilesWithConfig, oeFilesWithConfig);
     } else {
       var isFirst = true;
       for (var javaFilesForSingleProjectRoot : javaFilesByProjectRoot.values()) {
@@ -209,9 +214,9 @@ public class AnalysisTaskExecutor {
         javaFilesForSingleProjectRoot.forEach(uri -> toAnalyze.put(uri, javaFiles.get(uri)));
         if (isFirst) {
           toAnalyze.putAll(nonJavaFiles);
-          analyzeSingleModule(task, workspaceFolder, settings, binding, toAnalyze, javaFilesWithConfig);
+          analyzeSingleModule(task, workspaceFolder, settings, binding, toAnalyze, javaFilesWithConfig, oeFilesWithConfig);
         } else {
-          analyzeSingleModule(task, workspaceFolder, settings, binding, toAnalyze, javaFilesWithConfig);
+          analyzeSingleModule(task, workspaceFolder, settings, binding, toAnalyze, javaFilesWithConfig, oeFilesWithConfig);
         }
         isFirst = false;
       }
@@ -252,27 +257,42 @@ public class AnalysisTaskExecutor {
     return javaFilesWithConfig;
   }
 
+  private Map<URI, GetOpenEdgeConfigResponse> collectOpenEdgeFilesWithConfig(Map<URI, VersionedOpenFile> oeFiles) {
+	    Map<URI, GetOpenEdgeConfigResponse> oeFilesWithConfig = new HashMap<>();
+	    oeFiles.forEach((uri, openFile) -> {
+	      var oeConfigOpt = oeConfigCache.getOrFetch(uri);
+	      if (oeConfigOpt.isEmpty()) {
+	        clientLogger.info(format("Analysis of OE file \"%s\" may not show all issues because SonarLint" +
+	          " was unable to query project configuration (propath, database connections, ...)", uri));
+	        clearIssueCacheAndPublishEmptyDiagnostics(uri);
+	      } else {
+	        oeFilesWithConfig.put(uri, oeConfigOpt.get());
+	      }
+	    });
+	    return oeFilesWithConfig;
+	  }
+
   /**
    * Here we have only files from the same folder, same binding, same Java module, so we can run the analysis engine.
    */
   private void analyzeSingleModule(AnalysisTask task, Optional<WorkspaceFolderWrapper> workspaceFolder, WorkspaceFolderSettings settings, Optional<ProjectBinding> binding,
     Map<URI, VersionedOpenFile> filesToAnalyze,
-    Map<URI, GetJavaConfigResponse> javaConfigs) {
+    Map<URI, GetJavaConfigResponse> javaConfigs, Map<URI, GetOpenEdgeConfigResponse> oeConfigs) {
 
     var folderUri = workspaceFolder.map(WorkspaceFolderWrapper::getUri).orElse(null);
 
     if (task.shouldShowProgress()) {
       progressManager.doWithProgress(String.format("SonarLint scanning %d files for hotspots", task.getFilesToAnalyze().size()), null, () -> {
         },
-        progressFacade -> analyzeSingleModuleNonExcluded(task, settings, binding, filesToAnalyze, folderUri, javaConfigs, progressFacade));
+        progressFacade -> analyzeSingleModuleNonExcluded(task, settings, binding, filesToAnalyze, folderUri, javaConfigs, oeConfigs, progressFacade));
     } else {
-      analyzeSingleModuleNonExcluded(task, settings, binding, filesToAnalyze, folderUri, javaConfigs, null);
+      analyzeSingleModuleNonExcluded(task, settings, binding, filesToAnalyze, folderUri, javaConfigs, oeConfigs, null);
     }
 
   }
 
   private void analyzeSingleModuleNonExcluded(AnalysisTask task, WorkspaceFolderSettings settings, Optional<ProjectBinding> binding,
-    Map<URI, VersionedOpenFile> filesToAnalyze, @Nullable URI folderUri, Map<URI, GetJavaConfigResponse> javaConfigs, @Nullable ProgressFacade progressFacade) {
+    Map<URI, VersionedOpenFile> filesToAnalyze, @Nullable URI folderUri, Map<URI, GetJavaConfigResponse> javaConfigs, Map<URI, GetOpenEdgeConfigResponse> oeConfigs, @Nullable ProgressFacade progressFacade) {
     checkCanceled(task, progressFacade);
     if (filesToAnalyze.size() == 1) {
       clientLogger.info(format("Analyzing file \"%s\"...", filesToAnalyze.keySet().iterator().next()));
@@ -288,7 +308,7 @@ public class AnalysisTaskExecutor {
       }
     });
 
-    analyzeAndTrack(task, settings, folderUri, filesToAnalyze, javaConfigs);
+    analyzeAndTrack(task, settings, folderUri, filesToAnalyze, javaConfigs, oeConfigs);
   }
 
   private static void checkCanceled(AnalysisTask task, @Nullable ProgressFacade progressFacade) {
@@ -322,19 +342,19 @@ public class AnalysisTaskExecutor {
   }
 
   private void analyzeAndTrack(AnalysisTask task, WorkspaceFolderSettings settings, @Nullable URI folderUri, Map<URI, VersionedOpenFile> filesToAnalyze,
-    Map<URI, GetJavaConfigResponse> javaConfigs) {
+    Map<URI, GetJavaConfigResponse> javaConfigs, Map<URI, GetOpenEdgeConfigResponse> oeConfigs) {
 
-    var extraProperties = buildExtraPropertiesMap(settings, filesToAnalyze, javaConfigs);
+    var extraProperties = buildExtraPropertiesMap(settings, filesToAnalyze, javaConfigs, oeConfigs);
 
     analysisTasksCache.analyze(task.getAnalysisId(), task);
     backendServiceFacade.getBackendService().analyzeFilesAndTrack(folderUri != null ? folderUri.toString() : ROOT_CONFIGURATION_SCOPE, task.getAnalysisId(),
       filesToAnalyze.keySet().stream().toList(), extraProperties, true).join();
   }
 
-  private Map<String, String> buildExtraPropertiesMap(WorkspaceFolderSettings settings, Map<URI, VersionedOpenFile> filesToAnalyze, Map<URI, GetJavaConfigResponse> javaConfigs) {
+  private Map<String, String> buildExtraPropertiesMap(WorkspaceFolderSettings settings, Map<URI, VersionedOpenFile> filesToAnalyze, Map<URI, GetJavaConfigResponse> javaConfigs, Map<URI, GetOpenEdgeConfigResponse> oeConfigs) {
     var extraProperties = new HashMap<String, String>();
     extraProperties.putAll(settings.getAnalyzerProperties());
-    extraProperties.putAll(javaConfigCache.configureJavaProperties(filesToAnalyze.keySet(), javaConfigs));
+    extraProperties.putAll(oeConfigCache.configureOpenEdgeProperties(filesToAnalyze.keySet(), oeConfigs));
 
     var pathToCompileCommands = settings.getPathToCompileCommands();
     if (pathToCompileCommands != null) {

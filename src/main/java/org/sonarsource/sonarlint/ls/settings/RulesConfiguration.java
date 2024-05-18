@@ -66,7 +66,9 @@ class RulesConfiguration {
 
     @SuppressWarnings("unchecked")
     ConfiguredRule(Map.Entry<String, Object> ruleJson) {
-      this.key = safeParseRuleKey(ruleJson.getKey());
+      // See Sonarlint VSCode repository. Rule configuration is stored with underscores
+      // instead of periods, as VSCode would otherwise consider package name as config sections
+      this.key = safeParseRuleKey(ruleJson.getKey().replace("_", "."));
       if (ruleJson.getValue() instanceof Map) {
         var config = (Map<String, Object>) ruleJson.getValue();
         this.level = safeParseLevel(config);

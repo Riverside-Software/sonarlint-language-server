@@ -323,6 +323,7 @@ public abstract class AbstractLanguageServerMediumTests {
     Map<String, Object> globalSettings = new HashMap<>();
     Map<String, Map<String, Object>> folderSettings = new HashMap<>();
     Map<String, GetJavaConfigResponse> javaConfigs = new HashMap<>();
+    Map<String, GetOpenEdgeConfigResponse> oeConfigs = new HashMap<>();
     Map<String, String> branchNameByFolder = new HashMap<>();
     Map<String, String> referenceBranchNameByFolder = new HashMap<>();
     Map<String, Boolean> scopeReadyForAnalysis = new HashMap<>();
@@ -536,6 +537,13 @@ public abstract class AbstractLanguageServerMediumTests {
     public CompletableFuture<GetJavaConfigResponse> getJavaConfig(String fileUri) {
       return CompletableFutures.computeAsync(cancelToken -> {
         return javaConfigs.get(fileUri);
+      });
+    }
+
+    @Override
+    public CompletableFuture<GetOpenEdgeConfigResponse> getOpenEdgeConfig(String fileUri) {
+      return CompletableFutures.computeAsync(cancelToken -> {
+        return oeConfigs.get(fileUri);
       });
     }
 

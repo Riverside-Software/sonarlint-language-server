@@ -9,7 +9,7 @@
   </parent>
   <groupId>org.sonarsource.sonarlint.ls</groupId>
   <artifactId>sonarlint-language-server</artifactId>
-  <version>3.8-SNAPSHOT</version>
+  <version>3.8.99003</version>
   <packaging>jar</packaging>
   <name>SonarLint Language Server</name>
   <description>SonarLint Language Server</description>
@@ -24,7 +24,7 @@
 
   <properties>
     <jdk.min.version>17</jdk.min.version>
-    <sonarlint.core.version>10.4.0.78811</sonarlint.core.version>
+    <sonarlint.core.version>10.4.99002</sonarlint.core.version>
     <!-- Version used by Xodus -->
     <kotlin.version>1.6.10</kotlin.version>
     <!-- analyzers used for tests -->
@@ -37,6 +37,7 @@
     <sonar.text.version>2.10.0.2188</sonar.text.version>
     <sonar.go.version>1.15.0.4655</sonar.go.version>
     <sonar.iac.version>1.27.0.9518</sonar.iac.version>
+    <sonar.oe.version>2.28.0</sonar.oe.version>
     <sonarlint.omnisharp.version>1.19.0.86083</sonarlint.omnisharp.version>
     <gitRepositoryName>sonarlint-language-server</gitRepositoryName>
     <!-- Release: enable publication to Bintray -->
@@ -272,6 +273,15 @@
                   <destFileName>sonargo.jar</destFileName>
                 </artifactItem>
                 <artifactItem>
+                  <groupId>eu.rssw.sonar.openedge</groupId>
+                  <artifactId>sonar-openedge-plugin</artifactId>
+                  <version>${sonar.oe.version}</version>
+                  <type>jar</type>
+                  <overWrite>false</overWrite>
+                  <outputDirectory>${project.build.directory}/plugins</outputDirectory>
+                  <destFileName>sonaroe.jar</destFileName>
+                </artifactItem>
+                <artifactItem>
                   <groupId>org.sonarsource.iac</groupId>
                   <artifactId>sonar-iac-plugin</artifactId>
                   <version>${sonar.iac.version}</version>
@@ -339,7 +349,7 @@
           <rerunFailingTestsCount>2</rerunFailingTestsCount>
         </configuration>
       </plugin>
-      <plugin>
+      <!-- <plugin>
         <groupId>com.github.eirslett</groupId>
         <artifactId>frontend-maven-plugin</artifactId>
         <version>1.8.0</version>
@@ -366,7 +376,7 @@
             </configuration>
           </execution>
         </executions>
-      </plugin>
+      </plugin> -->
     </plugins>
   </build>
 

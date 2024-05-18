@@ -127,6 +127,7 @@ import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.NotebookDiagnosticPublisher;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
 import org.sonarsource.sonarlint.ls.notebooks.VersionedOpenNotebook;
+import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
 import org.sonarsource.sonarlint.ls.progress.ProgressManager;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
@@ -171,6 +172,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   private final HostInfoProvider hostInfoProvider;
   private final WorkspaceFolderBranchManager branchManager;
   private final JavaConfigCache javaConfigCache;
+  private final OpenEdgeConfigCache oeConfigCache;
   private final IssuesCache issuesCache;
   private final HotspotsCache securityHotspotsCache;
   private final DiagnosticPublisher diagnosticPublisher;
@@ -242,6 +244,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     backendServiceFacade.setSettingsManager(settingsManager);
     this.fileTypeClassifier = new FileTypeClassifier(lsLogOutput);
     javaConfigCache = new JavaConfigCache(client, openFilesCache, lsLogOutput);
+    oeConfigCache = new OpenEdgeConfigCache(client, openFilesCache, lsLogOutput);
     this.settingsManager.addListener(lsLogOutput);
     this.bindingManager = new ProjectBindingManager(workspaceFoldersManager, settingsManager,
       client, lsLogOutput, backendServiceFacade, openNotebooksCache);
@@ -256,7 +259,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     vsCodeClient.setSmartNotifications(smartNotifications);
     this.scmIgnoredCache = new ScmIgnoredCache(client, lsLogOutput);
     this.moduleEventsProcessor = new ModuleEventsProcessor(workspaceFoldersManager, fileTypeClassifier, javaConfigCache, backendServiceFacade, settingsManager);
-    this.analysisTaskExecutor = new AnalysisTaskExecutor(scmIgnoredCache, lsLogOutput, workspaceFoldersManager, bindingManager, javaConfigCache, settingsManager,
+    this.analysisTaskExecutor = new AnalysisTaskExecutor(scmIgnoredCache, lsLogOutput, workspaceFoldersManager, bindingManager, javaConfigCache, oeConfigCache, settingsManager,
       issuesCache, securityHotspotsCache, taintVulnerabilitiesCache, diagnosticPublisher,
       client, openNotebooksCache, notebookDiagnosticPublisher, progressManager, backendServiceFacade, analysisTasksCache);
     vsCodeClient.setAnalysisTaskExecutor(analysisTaskExecutor);
@@ -750,14 +753,14 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
 
   public Map<String, Path> getEmbeddedPluginsToPath() {
     var plugins = new HashMap<String, Path>();
-    addPluginPathOrWarn("cfamily", Language.C, plugins);
-    addPluginPathOrWarn("html", Language.HTML, plugins);
-    addPluginPathOrWarn("js", Language.JS, plugins);
-    addPluginPathOrWarn("xml", Language.XML, plugins);
-    addPluginPathOrWarn("text", Language.SECRETS, plugins);
-    addPluginPathOrWarn("go", Language.GO, plugins);
-    addPluginPathOrWarn("iac", Language.CLOUDFORMATION, plugins);
-    addPluginPathOrWarn("lintomnisharp", Language.CS, plugins);
+    // addPluginPathOrWarn("cfamily", Language.C, plugins);
+    // addPluginPathOrWarn("html", Language.HTML, plugins);
+    // addPluginPathOrWarn("js", Language.JS, plugins);
+    // addPluginPathOrWarn("xml", Language.XML, plugins);
+    // addPluginPathOrWarn("text", Language.SECRETS, plugins);
+    // addPluginPathOrWarn("go", Language.GO, plugins);
+    // addPluginPathOrWarn("iac", Language.CLOUDFORMATION, plugins);
+    // addPluginPathOrWarn("lintomnisharp", Language.CS, plugins);
     return plugins;
   }
 

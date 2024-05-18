@@ -40,6 +40,8 @@ public enum LSLanguage {
   KOTLIN("Kotlin", "kotlin"),
   KUBERNETES("Kubernetes", "kubernetes"),
   OBJC("Objective C", "objc"),
+  OPENEDGE("OpenEdge", "oe"),
+  OPENEDGE_DB("OpenEdge DB", "oedb"),
   PHP("PHP", "php"),
   PLI("PL/I", "pli"),
   PLSQL("PL/SQL", "plsql"),

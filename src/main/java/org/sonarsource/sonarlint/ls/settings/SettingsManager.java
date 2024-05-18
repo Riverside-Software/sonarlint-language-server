@@ -72,7 +72,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
   private static final String SERVER_ID = "serverId";
   private static final String TOKEN = "token";
   private static final String CONNECTION_ID = "connectionId";
-  public static final String SONARLINT_CONFIGURATION_NAMESPACE = "sonarlint";
+  public static final String SONARLINT_CONFIGURATION_NAMESPACE = "sonarlint-abl";
   public static final String DOTNET_DEFAULT_SOLUTION_PATH = "dotnet.defaultSolution";
   public static final String OMNISHARP_USE_MODERN_NET = "omnisharp.useModernNet";
   public static final String OMNISHARP_LOAD_PROJECT_ON_DEMAND = "omnisharp.enableMsBuildLoadProjectsOnDemand";
