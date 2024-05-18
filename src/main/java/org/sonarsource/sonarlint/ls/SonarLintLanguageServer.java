@@ -127,6 +127,7 @@ import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.NotebookDiagnosticPublisher;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
 import org.sonarsource.sonarlint.ls.notebooks.VersionedOpenNotebook;
+import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
 import org.sonarsource.sonarlint.ls.progress.ProgressManager;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
@@ -174,6 +175,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   private final HostInfoProvider hostInfoProvider;
   private final WorkspaceFolderBranchManager branchManager;
   private final JavaConfigCache javaConfigCache;
+  private final OpenEdgeConfigCache oeConfigCache;
   private final IssuesCache issuesCache;
   private final IssuesCache securityHotspotsCache;
   private final DiagnosticPublisher diagnosticPublisher;
@@ -239,6 +241,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     backendServiceFacade.setSettingsManager(settingsManager);
     var fileTypeClassifier = new FileTypeClassifier(globalLogOutput);
     javaConfigCache = new JavaConfigCache(client, openFilesCache, globalLogOutput);
+    oeConfigCache = new OpenEdgeConfigCache(client, openFilesCache, globalLogOutput);
     this.enginesFactory = new EnginesFactory(analyzers, globalLogOutput,
       new WorkspaceFoldersProvider(workspaceFoldersManager, fileTypeClassifier, javaConfigCache), backendServiceFacade);
     this.standaloneEngineManager = new StandaloneEngineManager(enginesFactory);
@@ -258,7 +261,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     this.scmIgnoredCache = new ScmIgnoredCache(client, globalLogOutput);
     this.moduleEventsProcessor = new ModuleEventsProcessor(standaloneEngineManager, workspaceFoldersManager, bindingManager, fileTypeClassifier, javaConfigCache,
       backendServiceFacade);
-    var analysisTaskExecutor = new AnalysisTaskExecutor(scmIgnoredCache, lsLogOutput, globalLogOutput, workspaceFoldersManager, bindingManager, javaConfigCache, settingsManager,
+    var analysisTaskExecutor = new AnalysisTaskExecutor(scmIgnoredCache, lsLogOutput, globalLogOutput, workspaceFoldersManager, bindingManager, javaConfigCache, oeConfigCache, settingsManager,
       fileTypeClassifier, issuesCache, securityHotspotsCache, taintVulnerabilitiesCache, telemetry, skippedPluginsNotifier, standaloneEngineManager, diagnosticPublisher,
       client, openNotebooksCache, notebookDiagnosticPublisher, progressManager, backendServiceFacade);
     this.analysisScheduler = new AnalysisScheduler(lsLogOutput, workspaceFoldersManager, bindingManager, openFilesCache, openNotebooksCache, analysisTaskExecutor, client);
@@ -740,14 +743,14 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
 
   public Map<String, Path> getEmbeddedPluginsToPath() {
     var plugins = new HashMap<String, Path>();
-    addPluginPathOrWarn("cfamily", Language.C, plugins);
-    addPluginPathOrWarn("html", Language.HTML, plugins);
-    addPluginPathOrWarn("js", Language.JS, plugins);
-    addPluginPathOrWarn("xml", Language.XML, plugins);
-    addPluginPathOrWarn("text", Language.SECRETS, plugins);
-    addPluginPathOrWarn("go", Language.GO, plugins);
-    addPluginPathOrWarn("iac", Language.CLOUDFORMATION, plugins);
-    addPluginPathOrWarn("lintomnisharp", Language.CS, plugins);
+    // addPluginPathOrWarn("cfamily", Language.C, plugins);
+    // addPluginPathOrWarn("html", Language.HTML, plugins);
+    // addPluginPathOrWarn("js", Language.JS, plugins);
+    // addPluginPathOrWarn("xml", Language.XML, plugins);
+    // addPluginPathOrWarn("text", Language.SECRETS, plugins);
+    // addPluginPathOrWarn("go", Language.GO, plugins);
+    // addPluginPathOrWarn("iac", Language.CLOUDFORMATION, plugins);
+    // addPluginPathOrWarn("lintomnisharp", Language.CS, plugins);
     return plugins;
   }
 

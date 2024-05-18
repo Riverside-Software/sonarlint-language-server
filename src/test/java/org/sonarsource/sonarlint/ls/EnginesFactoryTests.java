@@ -69,6 +69,8 @@ class EnginesFactoryTests {
       Language.JSON,
       Language.KUBERNETES,
       Language.PHP,
+      Language.OPENEDGE,
+      Language.OPENEDGE_DB,
       Language.PYTHON,
       Language.SECRETS,
       Language.TERRAFORM,

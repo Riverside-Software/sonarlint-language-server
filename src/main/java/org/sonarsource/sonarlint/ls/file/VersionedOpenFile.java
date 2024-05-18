@@ -60,6 +60,10 @@ public class VersionedOpenFile {
     return "java".equals(languageId);
   }
 
+  public boolean isOpenEdge() {
+    return "abl".equals(languageId);
+  }
+
   @Override
   public String toString() {
     return ToStringBuilder.reflectionToString(this);

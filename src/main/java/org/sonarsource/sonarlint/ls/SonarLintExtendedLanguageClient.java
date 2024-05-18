@@ -725,6 +725,125 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
 
   }
 
+  @JsonRequest("sonarlint/getOpenEdgeConfig")
+  CompletableFuture<GetOpenEdgeConfigResponse> getOpenEdgeConfig(String fileUri);
+
+  class GetOpenEdgeProjectConfig {
+    private String projectRoot;
+    private String sourceDirs;
+    private String buildDirs;
+    private String propath;
+    private String rcodeCache;
+    private String propathRCodeCache;
+    private String schemaCache;
+
+    public String getProjectRoot() {
+      return projectRoot;
+    }
+
+    public void setProjectRoot(String projectRoot) {
+      this.projectRoot = projectRoot;
+    }
+
+    public String getSourceDirs() {
+      return sourceDirs;
+    }
+
+    public void setSourceDirs(String sourceDirs) {
+      this.sourceDirs = sourceDirs;
+    }
+
+    public String getBuildDirs() {
+      return buildDirs;
+    }
+
+    public void setBuildDirs(String buildDirs) {
+      this.buildDirs = buildDirs;
+    }
+
+    public String getPropath() {
+      return propath;
+    }
+
+    public void setPropath(String propath) {
+      this.propath = propath;
+    }
+
+    public String getRcodeCache() {
+      return rcodeCache;
+    }
+
+    public void setRcodeCache(String rcodeCache) {
+      this.rcodeCache = rcodeCache;
+    }
+
+    public String getPropathRCodeCache() {
+      return propathRCodeCache;
+    }
+
+    public void setPropathRCodeCache(String propathRCodeCache) {
+      this.propathRCodeCache = propathRCodeCache;
+    }
+
+    public String getSchemaCache() {
+      return schemaCache;
+    }
+
+    public void setSchemaCache(String schemaCache) {
+      this.schemaCache = schemaCache;
+    }
+
+  }
+
+  class GetOpenEdgeConfigResponse {
+    private GetOpenEdgeProjectConfig projectInfo;
+    private String sourceDir;
+    private String buildDir;
+    private String rcode;
+    private String xref;
+
+    public GetOpenEdgeProjectConfig getProjectInfo() {
+      return projectInfo;
+    }
+
+    public void setProjectInfo(GetOpenEdgeProjectConfig projectInfo) {
+      this.projectInfo = projectInfo;
+    }
+
+    public String getSourceDir() {
+      return sourceDir;
+    }
+
+    public void setSourceDir(String sourceDir) {
+      this.sourceDir = sourceDir;
+    }
+
+    public String getBuildDir() {
+      return buildDir;
+    }
+
+    public void setBuildDir(String buildDir) {
+      this.buildDir = buildDir;
+    }
+
+    public String getRcode() {
+      return rcode;
+    }
+
+    public void setRcode(String rcode) {
+      this.rcode = rcode;
+    }
+
+    public String getXref() {
+      return xref;
+    }
+
+    public void setXref(String xref) {
+      this.xref = xref;
+    }
+
+  }
+
   @JsonNotification("sonarlint/browseTo")
   void browseTo(String link);
 
