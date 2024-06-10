@@ -21,14 +21,9 @@ package org.sonarsource.sonarlint.ls.openedge;
 
 import static java.util.Optional.empty;
 import static java.util.Optional.ofNullable;
-import static java.util.stream.Collectors.groupingBy;
 
 import java.net.URI;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -37,7 +32,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
-import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.GetJavaConfigResponse;
 import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
 import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogOutput;
@@ -97,26 +91,25 @@ public class OpenEdgeConfigCache {
       });
   }
 
-  public Map<String, String> configureOpenEdgeProperties(Set<URI> fileInTheSameModule, Map<URI, SonarLintExtendedLanguageClient.GetOpenEdgeConfigResponse> javaConfigs) {
-	    Map<String, String> props = new HashMap<>();
-	    if (fileInTheSameModule.isEmpty())
-	    	return props;
-	    var opt = oeConfigPerFileURI.get(fileInTheSameModule.iterator().next());
-	    if ((opt == null) || opt.isEmpty())
-	    	return props;
-	    props.put("sonar.sources", opt.get().getProjectInfo().getSourceDirs());
-	    props.put("sonar.oe.binaries", opt.get().getProjectInfo().getBuildDirs());
-	    props.put("sonar.oe.propath", opt.get().getProjectInfo().getPropath());
-	    // props.put("sonar.oe.xref", opt.get().getXrefPath().toString());
-	    props.put("sonar.oe.binary.cache1", opt.get().getProjectInfo().getRcodeCache());
-	    props.put("sonar.oe.binary.cache2", opt.get().getProjectInfo().getPropathRCodeCache());
-	    props.put("sonar.oe.lint.databases.kryo", opt.get().getProjectInfo().getSchemaCache());
-	    props.put("sonar.core.id", "LanguageServer");
-	    props.put("sonar.oe.license", "AAECAQAAAZQaAyAAAAAAAABMS0BDb25zdWx0aW5nd2VyawBMYW5ndWFnZVNlcnZlcgBQUk9HUkVTUwByc3N3LW9lLW1haW4AO7QDuzq9RS8QOZMs8PfzVN/xk6PEVytmDo3058ZN3YgC1cct3Ug0Ckku9V0+yFnCotn5dHVgKI+RKunxpxi8lYNnUcmy+0HyVOhSdDuELJjPsabpYWA9alRqY0ofuA/BJ5IfZ7k/jAyq15rhcoV1N01btajhY2C7Qs0ShPcHX3gRiGyRrOf1hblDMT+1sYN12VIh6UddJj1eBb3QEtZI8eBZucAVr03ZbRycnrjg5RrKkFg8P6g+pDEtmyNAIm0e5V5R5EmuZkJafuH9dfz2be/vdm9ItY8CZg+AiUWrw1fWbplFf+kS03pBllmxd7Saa3y8/IGJLWW42MYKQ3XmHQ==");
-	    // entry.project.getLintExtraProps().forEach(pair -> extraProps.put(pair.getO1(), pair.getO2()));
-	    
-	    return props;
-	  }
+  public Map<String, String> configureOpenEdgeProperties(Set<URI> fileInTheSameModule,
+      Map<URI, SonarLintExtendedLanguageClient.GetOpenEdgeConfigResponse> oeConfigs) {
+    Map<String, String> props = new HashMap<>();
+    if (fileInTheSameModule.isEmpty())
+      return props;
+    if (!oeConfigPerFileURI.containsKey(fileInTheSameModule.iterator().next()))
+      return props;
+    var opt = oeConfigPerFileURI.get(fileInTheSameModule.iterator().next());
+    if (opt.isEmpty())
+      return props;
+    props.put("sonar.sources", opt.get().getProjectInfo().getSourceDirs());
+    props.put("sonar.oe.binaries", opt.get().getProjectInfo().getBuildDirs());
+    props.put("sonar.oe.propath", opt.get().getProjectInfo().getPropath());
+    props.put("sonar.oe.binary.cache1", opt.get().getProjectInfo().getRcodeCache());
+    props.put("sonar.oe.binary.cache2", opt.get().getProjectInfo().getPropathRCodeCache());
+    props.put("sonar.oe.lint.databases.kryo", opt.get().getProjectInfo().getSchemaCache());
+
+    return props;
+  }
 
   public void didClose(URI fileUri) {
     oeConfigPerFileURI.remove(fileUri);

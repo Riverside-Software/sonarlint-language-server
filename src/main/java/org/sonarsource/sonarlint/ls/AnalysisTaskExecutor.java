@@ -215,8 +215,7 @@ public class AnalysisTaskExecutor {
     Map<URI, VersionedOpenFile> javaFiles = ofNullable(splitJavaAndNonJavaFiles.get(true)).orElse(Map.of());
     Map<URI, VersionedOpenFile> nonJavaFiles = ofNullable(splitJavaAndNonJavaFiles.get(false)).orElse(Map.of());
 
-    // TODO Gilles Ca doit être par ici
-    Map<URI, GetJavaConfigResponse> javaFilesWithConfig = new HashMap<>(); // collectOpenEdgeFilesWithConfig(javaFiles);
+    Map<URI, GetJavaConfigResponse> javaFilesWithConfig = new HashMap<>();
     Map<URI, GetOpenEdgeConfigResponse> oeFilesWithConfig = collectOpenEdgeFilesWithConfig(javaFiles);
     var javaFilesWithoutConfig = javaFiles.entrySet()
       .stream().filter(it -> !oeFilesWithConfig.containsKey(it.getKey()))
@@ -292,7 +291,7 @@ public class AnalysisTaskExecutor {
 	      var oeConfigOpt = oeConfigCache.getOrFetch(uri);
 	      if (oeConfigOpt.isEmpty()) {
 	        clientLogger.info(format("Analysis of OE file \"%s\" may not show all issues because SonarLint" +
-	          " was unable to query project configuration (classpath, source level, ...)", uri));
+	          " was unable to query project configuration (propath, database connections, ...)", uri));
 	        clearIssueCacheAndPublishEmptyDiagnostics(uri);
 	      } else {
 	        oeFilesWithConfig.put(uri, oeConfigOpt.get());
