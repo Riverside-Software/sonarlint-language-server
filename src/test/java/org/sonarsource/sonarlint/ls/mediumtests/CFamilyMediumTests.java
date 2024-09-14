@@ -31,13 +31,14 @@ import org.apache.commons.lang3.SystemUtils;
 import org.apache.commons.text.StringEscapeUtils;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.AssertionsForClassTypes.tuple;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.eclipse.lsp4j.DiagnosticSeverity.Warning;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -51,6 +52,11 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
       "productName", "SLCORE tests",
       "productVersion", "0.1",
       "productKey", "productKey"));
+  }
+
+  @BeforeEach
+  void clean() {
+    setPathToCompileCommands(client.globalSettings, "");
   }
 
   @Override
@@ -113,8 +119,7 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
         }
         """);
 
-    awaitUntilAsserted(() -> assertLogContains("Skipping analysis of C and C++ file(s) because no compilation database was configured"));
-    awaitUntilAsserted(() -> assertThat(client.needCompilationDatabaseCalls.get()).isEqualTo(1));
+    awaitUntilAsserted(() -> assertLogContains("Specify the \"sonar.cfamily.compile-commands\" option to configure the C and C++ analysis"));
     assertThat(client.getDiagnostics(cppFileUri)).isEmpty();
   }
 
@@ -136,9 +141,9 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
         }
         """);
 
-    awaitUntilAsserted(() -> assertLogContains("Skipping analysis of C and C++ file(s) because configured compilation database does not exist: non/existing/file"));
-    awaitUntilAsserted(() -> assertThat(client.needCompilationDatabaseCalls.get()).isEqualTo(1));
+    awaitUntilAsserted(() -> assertLogContains("\"sonar.cfamily.compile-commands\" is not set to a valid file: non/existing/file"));
     assertThat(client.getDiagnostics(cppFileUri)).isEmpty();
+    assertThat(client.needCompilationDatabaseCalls.get()).isEqualTo(1);
   }
 
   @Test
@@ -162,8 +167,7 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
         }
         """);
 
-    awaitUntilAsserted(() -> assertLogContains("Skipping analysis of C and C++ file(s) because no compilation database was configured"));
-    awaitUntilAsserted(() -> assertThat(client.needCompilationDatabaseCalls.getAndSet(0)).isEqualTo(1));
+    awaitUntilAsserted(() -> assertLogContains("Specify the \"sonar.cfamily.compile-commands\" option to configure the C and C++ analysis"));
     assertThat(client.getDiagnostics(cppFileUri)).isEmpty();
 
     setPathToCompileCommands(client.globalSettings, compilationDatabaseFile.toString());
@@ -173,7 +177,7 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactlyInAnyOrder(tuple(1, 8, 1, 9, "cpp:S1481", "sonarlint", "unused variable 'i'", Warning)));
 
-    assertThat(client.needCompilationDatabaseCalls.get()).isZero();
+    assertThat(client.needCompilationDatabaseCalls.get()).isEqualTo(1);
 
   }
 
@@ -203,7 +207,6 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
     } else {
       fileExt = "sh";
     }
-    var mockClang = Paths.get("src/test/assets/cfamily/clang-test." + fileExt).toAbsolutePath();
-    return mockClang;
+    return Paths.get("src/test/assets/cfamily/clang-test." + fileExt).toAbsolutePath();
   }
 }

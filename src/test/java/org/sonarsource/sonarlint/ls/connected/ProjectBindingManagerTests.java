@@ -44,7 +44,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.projects.G
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.projects.SonarProjectDto;
 import org.sonarsource.sonarlint.core.serverapi.component.ServerProject;
 import org.sonarsource.sonarlint.core.serverconnection.DownloadException;
-import org.sonarsource.sonarlint.ls.AnalysisScheduler;
+import org.sonarsource.sonarlint.ls.ForcedAnalysisCoordinator;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.backend.BackendService;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
@@ -85,15 +85,17 @@ class ProjectBindingManagerTests {
   @TempDir
   Path basedir;
   private Path workspaceFolderPath;
+  private Path workspaceFolderPath2;
   private Path anotherFolderPath;
   private Path fileInAWorkspaceFolderPath;
+  private Path fileInAWorkspaceFolderPath2;
   private Path fileNotInAWorkspaceFolderPath;
   ConcurrentMap<URI, Optional<ProjectBinding>> folderBindingCache;
   private ProjectBindingManager underTest;
   private final SettingsManager settingsManager = mock(SettingsManager.class);
   private final WorkspaceFoldersManager foldersManager = mock(WorkspaceFoldersManager.class);
   private final Map<String, ServerConnectionSettings> servers = new HashMap<>();
-  private final AnalysisScheduler analysisManager = mock(AnalysisScheduler.class);
+  private final ForcedAnalysisCoordinator analysisManager = mock(ForcedAnalysisCoordinator.class);
   SonarLintExtendedLanguageClient client = mock(SonarLintExtendedLanguageClient.class);
   private final OpenNotebooksCache openNotebooksCache = mock(OpenNotebooksCache.class);
 
@@ -101,13 +103,13 @@ class ProjectBindingManagerTests {
   public void prepare() throws IOException {
     workspaceFolderPath = basedir.resolve("myWorkspaceFolder");
     Files.createDirectories(workspaceFolderPath);
-    var workspaceFolderPath2 = basedir.resolve("myWorkspaceFolder2");
+    workspaceFolderPath2 = basedir.resolve("myWorkspaceFolder2");
     Files.createDirectories(workspaceFolderPath2);
     anotherFolderPath = basedir.resolve("anotherFolder");
     Files.createDirectories(anotherFolderPath);
     fileInAWorkspaceFolderPath = workspaceFolderPath.resolve(FILE_PHP);
     Files.createFile(fileInAWorkspaceFolderPath);
-    var fileInAWorkspaceFolderPath2 = workspaceFolderPath2.resolve(FILE_PHP);
+    fileInAWorkspaceFolderPath2 = workspaceFolderPath2.resolve(FILE_PHP);
     Files.createFile(fileInAWorkspaceFolderPath2);
     fileNotInAWorkspaceFolderPath = anotherFolderPath.resolve(FILE_PHP);
     Files.createFile(fileNotInAWorkspaceFolderPath);
@@ -130,7 +132,7 @@ class ProjectBindingManagerTests {
   }
 
   private static WorkspaceSettings newWorkspaceSettingsWithServers(Map<String, ServerConnectionSettings> servers) {
-    return new WorkspaceSettings(false, servers, Collections.emptyList(), Collections.emptyList(), Collections.emptyMap(), false, false, "", false);
+    return new WorkspaceSettings(false, servers, Collections.emptyList(), Collections.emptyList(), Collections.emptyMap(), false, false, "", false, "");
   }
 
   @Test
@@ -446,7 +448,7 @@ class ProjectBindingManagerTests {
   }
 
   @Test
-  void should_get_binding_if_exist_is_empty() {
+  void should_get_binding_if_existis_empty() {
     var uri = URI.create("file:///folderUri");
 
     var maybeBinding = underTest.getBindingIfExists(uri);
@@ -484,4 +486,5 @@ class ProjectBindingManagerTests {
     when(foldersManager.findFolderForFile(fileInAWorkspaceFolderPath.toUri())).thenReturn(Optional.of(folderWrapper));
     return folderWrapper;
   }
+
 }

@@ -31,7 +31,9 @@ import java.nio.file.Paths;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +47,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import javax.annotation.Nullable;
 import nl.altindag.ssl.util.CertificateUtils;
 import org.apache.commons.codec.digest.DigestUtils;
@@ -91,9 +92,9 @@ import org.sonarsource.sonarlint.core.rpc.protocol.common.Either;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Language;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.TokenDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.UsernamePasswordDto;
-import org.sonarsource.sonarlint.ls.AnalysisScheduler;
-import org.sonarsource.sonarlint.ls.AnalysisTaskExecutor;
+import org.sonarsource.sonarlint.ls.AnalysisHelper;
 import org.sonarsource.sonarlint.ls.DiagnosticPublisher;
+import org.sonarsource.sonarlint.ls.ForcedAnalysisCoordinator;
 import org.sonarsource.sonarlint.ls.SkippedPluginsNotifier;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.CreateConnectionParams;
@@ -105,14 +106,11 @@ import org.sonarsource.sonarlint.ls.connected.api.HostInfoProvider;
 import org.sonarsource.sonarlint.ls.connected.events.ServerSentEventsHandlerService;
 import org.sonarsource.sonarlint.ls.connected.notifications.SmartNotifications;
 import org.sonarsource.sonarlint.ls.domain.TaintIssue;
-import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
-import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderBranchManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
-import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
-import org.sonarsource.sonarlint.ls.notebooks.VersionedOpenNotebook;
+import org.sonarsource.sonarlint.ls.progress.LSProgressMonitor;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.standalone.notifications.PromotionalNotifications;
@@ -139,28 +137,28 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   private BackendServiceFacade backendServiceFacade;
   private WorkspaceFolderBranchManager branchManager;
   private final TaintVulnerabilitiesCache taintVulnerabilitiesCache;
-  private final OpenFilesCache openFilesCache;
-  private final OpenNotebooksCache openNotebooksCache;
   private WorkspaceFoldersManager workspaceFoldersManager;
-  private AnalysisScheduler analysisScheduler;
+  private ForcedAnalysisCoordinator forcedAnalysisCoordinator;
   private DiagnosticPublisher diagnosticPublisher;
   private final ScheduledExecutorService bindingSuggestionsHandler;
   private final SkippedPluginsNotifier skippedPluginsNotifier;
   private final PromotionalNotifications promotionalNotifications;
+  private final LSProgressMonitor progressMonitor;
 
-  private AnalysisTaskExecutor analysisTaskExecutor;
+
+  private AnalysisHelper analysisHelper;
+
 
   public SonarLintVSCodeClient(SonarLintExtendedLanguageClient client, HostInfoProvider hostInfoProvider,
-    LanguageClientLogger logOutput, TaintVulnerabilitiesCache taintVulnerabilitiesCache, OpenFilesCache openFilesCache, OpenNotebooksCache openNotebooksCache,
-    SkippedPluginsNotifier skippedPluginsNotifier, PromotionalNotifications promotionalNotifications) {
+    LanguageClientLogger logOutput, TaintVulnerabilitiesCache taintVulnerabilitiesCache,
+    SkippedPluginsNotifier skippedPluginsNotifier, PromotionalNotifications promotionalNotifications, LSProgressMonitor progressMonitor) {
     this.client = client;
     this.hostInfoProvider = hostInfoProvider;
     this.logOutput = logOutput;
     this.taintVulnerabilitiesCache = taintVulnerabilitiesCache;
-    this.openFilesCache = openFilesCache;
-    this.openNotebooksCache = openNotebooksCache;
     this.skippedPluginsNotifier = skippedPluginsNotifier;
     this.promotionalNotifications = promotionalNotifications;
+    this.progressMonitor = progressMonitor;
     var bindingSuggestionsThreadFactory = Utils.threadFactory("Binding suggestion handler", false);
     bindingSuggestionsHandler = Executors.newSingleThreadScheduledExecutor(bindingSuggestionsThreadFactory);
     initializeDefaultProxyAuthenticator();
@@ -278,8 +276,10 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
         var serverProductName = isSonarCloud ? "SonarCloud" : "SonarQube";
         client.showMessage(new MessageParams(MessageType.Info, format("Connection to %s was successfully created.", serverProductName)));
         backendServiceFacade.getBackendService().didChangeConnections(currentConnections);
+        return new AssistCreatingConnectionResponse(newConnectionId);
+      } else {
+        throw new CancellationException("Automatic connection setup was cancelled");
       }
-      return new AssistCreatingConnectionResponse(newConnectionId);
     }).join();
   }
 
@@ -313,8 +313,8 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   @Override
   public void noBindingSuggestionFound(String projectKey) {
     var messageRequestParams = new ShowMessageRequestParams();
-    messageRequestParams.setMessage("SonarLint couldn't match SonarQube project '" + projectKey + "' to any of the currently " +
-      "open workspace folders. Please open your project in VSCode and try again.");
+    messageRequestParams.setMessage("SonarLint couldn't match the server project '" + projectKey + "' to any of the currently " +
+      "open workspace folders. Please make sure the project is open in the workspace, or try configuring the binding manually.");
     messageRequestParams.setType(MessageType.Error);
     var learnMoreAction = new MessageActionItem("Learn more");
     messageRequestParams.setActions(List.of(learnMoreAction));
@@ -328,12 +328,16 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
 
   @Override
   public void startProgress(StartProgressParams startProgressParams) {
-    // no-op
+    progressMonitor.createAndStartProgress(startProgressParams);
   }
 
   @Override
   public void reportProgress(ReportProgressParams reportProgressParams) {
-    // no-op
+    if (reportProgressParams.getNotification().isLeft()) {
+      progressMonitor.reportProgress(reportProgressParams);
+    } else if (reportProgressParams.getNotification().isRight()) {
+      progressMonitor.end(reportProgressParams);
+    }
   }
 
   @Override
@@ -352,7 +356,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
 
   @Override
   public TelemetryClientLiveAttributesResponse getTelemetryLiveAttributes() {
-    return new TelemetryClientLiveAttributesResponse(backendServiceFacade.getTelemetryInitParams().getAdditionalAttributes());
+    return new TelemetryClientLiveAttributesResponse(backendServiceFacade.getTelemetryInitParams().additionalAttributes());
   }
 
   @Override
@@ -393,7 +397,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     } catch (CertificateEncodingException | IndexOutOfBoundsException e) {
       logOutput.errorWithStackTrace("Certificate encoding is malformed, SHA fingerprints will not be displayed.", e);
     }
-    var actualSonarLintUserHome = SonarLintUserHome.get();
+    var pathToActualTrustStore = SonarLintUserHome.get().resolve("ssl/truststore.p12");
     var confirmationParams = new SonarLintExtendedLanguageClient.SslCertificateConfirmationParams(
       untrustedCert == null ? "" : untrustedCert.getSubjectX500Principal().getName(),
       untrustedCert == null ? "" : untrustedCert.getIssuerX500Principal().getName(),
@@ -401,7 +405,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
       untrustedCert == null ? "" : untrustedCert.getNotAfter().toString(),
       sha1fingerprint,
       sha256fingerprint,
-      actualSonarLintUserHome.toString()
+      pathToActualTrustStore.toString()
     );
 
     return client.askSslCertificateConfirmation(confirmationParams).join();
@@ -525,17 +529,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
           return null;
         });
 
-        Collection<VersionedOpenFile> openFiles = openFilesCache.getAll();
-        Collection<VersionedOpenFile> allOpenItems = Stream.concat(openNotebooksCache.getAll().stream()
-            .map(VersionedOpenNotebook::asVersionedOpenFile), openFiles.stream())
-          .toList();
-        for (var openFile : allOpenItems) {
-          Optional<WorkspaceFolderWrapper> folderForFileOpt = workspaceFoldersManager.findFolderForFile(openFile.getUri());
-          if (folderForFileOpt.isPresent() && folderForFileOpt.get().getUri().equals(folderUri)) {
-            analysisScheduler.didOpen(openFile);
-          }
-        }
-        analysisScheduler.analyzeAllUnboundOpenFiles();
+        forcedAnalysisCoordinator.analyzeAllUnboundOpenFiles();
       });
       initializeTaintCache(configurationScopeIds);
     }
@@ -621,16 +615,16 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     this.branchManager = branchManager;
   }
 
-  public void setAnalysisTaskExecutor(AnalysisTaskExecutor analysisTaskExecutor) {
-    this.analysisTaskExecutor = analysisTaskExecutor;
+  public void setAnalysisTaskExecutor(AnalysisHelper analysisTaskExecutor) {
+    this.analysisHelper = analysisTaskExecutor;
   }
 
   public void setWorkspaceFoldersManager(WorkspaceFoldersManager workspaceFoldersManager) {
     this.workspaceFoldersManager = workspaceFoldersManager;
   }
 
-  public void setAnalysisScheduler(AnalysisScheduler analysisScheduler) {
-    this.analysisScheduler = analysisScheduler;
+  public void setAnalysisScheduler(ForcedAnalysisCoordinator analysisScheduler) {
+    this.forcedAnalysisCoordinator = analysisScheduler;
   }
 
   public void setDiagnosticPublisher(DiagnosticPublisher diagnosticPublisher) {
@@ -669,12 +663,24 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
       .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().stream()
         .map(i -> (RaisedFindingDto) i)
         .toList()));
-    analysisTaskExecutor.handleIssues(findings, analysisId);
+    analysisHelper.handleIssues(findings);
   }
 
   @Override
   public void raiseHotspots(String configurationScopeId, Map<URI, List<RaisedHotspotDto>> hotspotsByFileUri,
     boolean isIntermediatePublication, @Nullable UUID analysisId) {
-    analysisTaskExecutor.handleHotspots(hotspotsByFileUri);
+    analysisHelper.handleHotspots(hotspotsByFileUri);
+  }
+
+  @Override
+  public Set<String> getFileExclusions(String configurationScopeId) {
+    var excludes = settingsManager.getCurrentSettings().getAnalysisExcludes();
+    return excludes.isEmpty() ? Collections.emptySet() : Arrays.stream(excludes.split(","))
+      .collect(Collectors.toSet());
+  }
+
+  @Override
+  public Map<String, String> getInferredAnalysisProperties(String configurationScopeId, List<URI> filesToAnalyze) {
+    return analysisHelper.getInferredAnalysisProperties(configurationScopeId, filesToAnalyze);
   }
 }

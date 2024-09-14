@@ -40,6 +40,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import org.assertj.core.api.Assertions;
 import org.awaitility.Awaitility;
@@ -94,9 +95,9 @@ import org.sonarsource.sonarlint.core.rpc.protocol.common.IssueSeverity;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Language;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.RuleType;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.TextRangeDto;
-import org.sonarsource.sonarlint.ls.AnalysisScheduler;
-import org.sonarsource.sonarlint.ls.AnalysisTaskExecutor;
+import org.sonarsource.sonarlint.ls.AnalysisHelper;
 import org.sonarsource.sonarlint.ls.DiagnosticPublisher;
+import org.sonarsource.sonarlint.ls.ForcedAnalysisCoordinator;
 import org.sonarsource.sonarlint.ls.SkippedPluginsNotifier;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.AssistCreatingConnectionResponse;
@@ -115,6 +116,7 @@ import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
+import org.sonarsource.sonarlint.ls.progress.LSProgressMonitor;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.settings.WorkspaceFolderSettings;
@@ -127,6 +129,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -169,10 +172,11 @@ class SonarLintVSCodeClientTests {
   ArgumentCaptor<ShowAllLocationsCommand.Param> paramCaptor;
   BackendServiceFacade backendServiceFacade = mock(BackendServiceFacade.class);
   TaintVulnerabilitiesCache taintVulnerabilitiesCache = mock(TaintVulnerabilitiesCache.class);
-  AnalysisScheduler analysisScheduler = mock(AnalysisScheduler.class);
+  ForcedAnalysisCoordinator forcedAnalysisCoordinator = mock(ForcedAnalysisCoordinator.class);
   DiagnosticPublisher diagnosticPublisher = mock(DiagnosticPublisher.class);
   PromotionalNotifications promotionalNotifications = mock(PromotionalNotifications.class);
-  AnalysisTaskExecutor analysisTaskExecutor = mock(AnalysisTaskExecutor.class);
+  AnalysisHelper analysisHelper = mock(AnalysisHelper.class);
+  LSProgressMonitor progressMonitor = mock(LSProgressMonitor.class);
 
   private static final String PEM = """
     subject=CN=localhost,O=SonarSource SA,L=Geneva,ST=Geneva,C=CH
@@ -213,16 +217,16 @@ class SonarLintVSCodeClientTests {
 
   @BeforeEach
   public void setup() throws IOException {
-    underTest = new SonarLintVSCodeClient(client, server, logTester.getLogger(), taintVulnerabilitiesCache, openFilesCache, openNotebooksCache,
-      skippedPluginsNotifier, promotionalNotifications);
+    underTest = new SonarLintVSCodeClient(client, server, logTester.getLogger(), taintVulnerabilitiesCache,
+      skippedPluginsNotifier, promotionalNotifications, progressMonitor);
     underTest.setSmartNotifications(smartNotifications);
     underTest.setSettingsManager(settingsManager);
     underTest.setBindingManager(bindingManager);
     underTest.setServerSentEventsHandlerService(serverSentEventsHandlerService);
     underTest.setBackendServiceFacade(backendServiceFacade);
     underTest.setDiagnosticPublisher(diagnosticPublisher);
-    underTest.setAnalysisScheduler(analysisScheduler);
-    underTest.setAnalysisTaskExecutor(analysisTaskExecutor);
+    underTest.setAnalysisScheduler(forcedAnalysisCoordinator);
+    underTest.setAnalysisTaskExecutor(analysisHelper);
     workspaceFolderPath = basedir.resolve("myWorkspaceFolder");
     Files.createDirectories(workspaceFolderPath);
     fileInAWorkspaceFolderPath = workspaceFolderPath.resolve(FILE_PYTHON);
@@ -487,11 +491,11 @@ class SonarLintVSCodeClientTests {
     var assistCreatingConnectionParams = new AssistCreatingConnectionParams(new SonarQubeConnectionParams(serverUrl, null, null));
     when(client.workspaceFolders()).thenReturn(CompletableFuture.completedFuture(List.of()));
     when(client.assistCreatingConnection(any())).thenReturn(CompletableFuture.completedFuture(
-      new AssistCreatingConnectionResponse(null)
+      null
     ));
     when(settingsManager.getCurrentSettings()).thenReturn(mock(WorkspaceSettings.class));
     when(backendServiceFacade.getBackendService()).thenReturn(mock(BackendService.class));
-    underTest.assistCreatingConnection(assistCreatingConnectionParams, null);
+    assertThrows(CompletionException.class, () -> underTest.assistCreatingConnection(assistCreatingConnectionParams, null));
 
     var argCaptor = ArgumentCaptor.forClass(CreateConnectionParams.class);
     verify(client).assistCreatingConnection(argCaptor.capture());
@@ -524,7 +528,7 @@ class SonarLintVSCodeClientTests {
 
     var projectKey = "projectKey";
     var messageRequestParams = new ShowMessageRequestParams();
-    messageRequestParams.setMessage("SonarLint couldn't match SonarQube project '" + projectKey + "' to any of the currently open workspace folders. Please open your project in VSCode and try again.");
+    messageRequestParams.setMessage("SonarLint couldn't match the server project '" + projectKey + "' to any of the currently open workspace folders. Please make sure the project is open in the workspace, or try configuring the binding manually.");
     messageRequestParams.setType(MessageType.Error);
     var learnMoreAction = new MessageActionItem("Learn more");
     messageRequestParams.setActions(List.of(learnMoreAction));
@@ -719,7 +723,7 @@ class SonarLintVSCodeClientTests {
     when(fakeBackend.getAllTaints(workspaceFolderPath.toUri().toString()))
       .thenReturn(CompletableFuture.completedFuture(new ListAllResponse(List.of(getTaintDto(uuid1), getTaintDto(uuid2)))));
     when(taintVulnerabilitiesCache.getTaintVulnerabilitiesPerFile()).thenReturn(Map.of());
-    doNothing().when(analysisScheduler).analyzeAllUnboundOpenFiles();
+    doNothing().when(forcedAnalysisCoordinator).analyzeAllUnboundOpenFiles();
 
     underTest.didChangeAnalysisReadiness(Set.of(workspaceFolderPath.toUri().toString()), true);
 
@@ -932,12 +936,10 @@ class SonarLintVSCodeClientTests {
     var issuesByFileUri = Map.of(fileUri, List.of(raisedIssue));
     underTest.raiseIssues(configScopeId, issuesByFileUri, false, analysisId);
     ArgumentCaptor<Map<URI, List<RaisedFindingDto>>> findingsPerFileCaptor = ArgumentCaptor.forClass(Map.class);
-    ArgumentCaptor<UUID> analysisIdCaptor = ArgumentCaptor.forClass(UUID.class);
 
-    verify(analysisTaskExecutor, times(1)).handleIssues(findingsPerFileCaptor.capture(), analysisIdCaptor.capture());
+    verify(analysisHelper, times(1)).handleIssues(findingsPerFileCaptor.capture());
     assertThat(findingsPerFileCaptor.getValue().get(fileUri)).isNotNull();
     assertThat(findingsPerFileCaptor.getValue().get(fileUri)).hasSize(1);
-    assertThat(analysisIdCaptor.getValue()).isEqualTo(analysisId);
   }
 
   private TaintVulnerabilityDto getTaintDto(UUID uuid) {

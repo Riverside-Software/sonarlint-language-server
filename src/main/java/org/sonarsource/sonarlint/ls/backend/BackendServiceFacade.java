@@ -154,10 +154,10 @@ public class BackendServiceFacade {
     return new InitializeParams(
       new ClientConstantInfoDto("Visual Studio Code", initParams.getUserAgent()),
       new TelemetryClientConstantAttributesDto(initParams.getTelemetryProductKey(),
-        telemetryInitParams.getProductName(),
-        telemetryInitParams.getProductVersion(),
-        telemetryInitParams.getIdeVersion(),
-        telemetryInitParams.getAdditionalAttributes()),
+        telemetryInitParams.productName(),
+        telemetryInitParams.productVersion(),
+        telemetryInitParams.ideVersion(),
+        telemetryInitParams.additionalAttributes()),
       getHttpConfiguration(),
       getSonarCloudAlternativeEnvironment(),
       new FeatureFlagsDto(true, true, true,
@@ -175,7 +175,8 @@ public class BackendServiceFacade {
       initParams.getStandaloneRuleConfigByKey(),
       initParams.isFocusOnNewCode(),
       languageSpecificRequirements,
-      false
+      true,
+      null
     );
   }
 
