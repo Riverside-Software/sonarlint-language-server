@@ -30,15 +30,15 @@ import java.util.stream.Collectors;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.hotspot.RaisedHotspotDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.issue.RaisedFindingDto;
-import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.GetJavaConfigResponse;
+import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.GetOpenEdgeConfigResponse;
 import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
 import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
-import org.sonarsource.sonarlint.ls.java.JavaConfigCache;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.NotebookDiagnosticPublisher;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
+import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.settings.WorkspaceFolderSettings;
 
@@ -50,7 +50,7 @@ public class AnalysisHelper {
   private final SonarLintExtendedLanguageClient client;
   private final LanguageClientLogger clientLogger;
   private final WorkspaceFoldersManager workspaceFoldersManager;
-  private final JavaConfigCache javaConfigCache;
+  private final OpenEdgeConfigCache oeConfigCache;
   private final SettingsManager settingsManager;
   private final IssuesCache issuesCache;
   private final HotspotsCache securityHotspotsCache;
@@ -60,14 +60,14 @@ public class AnalysisHelper {
   private final OpenFilesCache openFilesCache;
 
   public AnalysisHelper(SonarLintExtendedLanguageClient client, LanguageClientLogger clientLogger,
-    WorkspaceFoldersManager workspaceFoldersManager, JavaConfigCache javaConfigCache, SettingsManager settingsManager,
+    WorkspaceFoldersManager workspaceFoldersManager, OpenEdgeConfigCache oeConfigCache, SettingsManager settingsManager,
     IssuesCache issuesCache, HotspotsCache securityHotspotsCache, DiagnosticPublisher diagnosticPublisher,
     OpenNotebooksCache openNotebooksCache, NotebookDiagnosticPublisher notebookDiagnosticPublisher,
     OpenFilesCache openFilesCache) {
     this.client = client;
     this.clientLogger = clientLogger;
     this.workspaceFoldersManager = workspaceFoldersManager;
-    this.javaConfigCache = javaConfigCache;
+    this.oeConfigCache = oeConfigCache;
     this.settingsManager = settingsManager;
     this.issuesCache = issuesCache;
     this.securityHotspotsCache = securityHotspotsCache;
@@ -83,10 +83,10 @@ public class AnalysisHelper {
     diagnosticPublisher.publishDiagnostics(f, false);
   }
 
-  private Map<URI, GetJavaConfigResponse> collectJavaFilesWithConfig(Map<URI, VersionedOpenFile> javaFiles) {
-    Map<URI, GetJavaConfigResponse> javaFilesWithConfig = new HashMap<>();
+  private Map<URI, GetOpenEdgeConfigResponse> collectOEFilesWithConfig(Map<URI, VersionedOpenFile> javaFiles) {
+    Map<URI, GetOpenEdgeConfigResponse> javaFilesWithConfig = new HashMap<>();
     javaFiles.forEach((uri, openFile) -> {
-      var javaConfigOpt = javaConfigCache.getOrFetch(uri);
+      var javaConfigOpt = oeConfigCache.getOrFetch(uri);
       if (javaConfigOpt.isEmpty()) {
         clientLogger.debug(format("Analysis of Java file \"%s\" may not show all issues because SonarLint" +
           " was unable to query project configuration (classpath, source level, ...)", uri));
@@ -136,9 +136,9 @@ public class AnalysisHelper {
     var javaFiles = filesToAnalyzeUris.stream().map(openFilesCache::getFile).filter(Optional::isPresent).map(Optional::get)
       .filter(VersionedOpenFile::isJava).collect(Collectors.toMap(VersionedOpenFile::getUri, identity()));
 
-    var javaConfigs = collectJavaFilesWithConfig(javaFiles);
+    var javaConfigs = collectOEFilesWithConfig(javaFiles);
 
-    extraProperties.putAll(javaConfigCache.configureJavaProperties(filesToAnalyzeUris, javaConfigs));
+    extraProperties.putAll(oeConfigCache.configureOpenEdgeProperties(filesToAnalyzeUris, javaConfigs));
   }
 
   private void populateCfamilyProperties(List<URI> filesToAnalyzeUris, Map<String,

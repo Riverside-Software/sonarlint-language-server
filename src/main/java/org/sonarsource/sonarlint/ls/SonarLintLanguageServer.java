@@ -120,7 +120,6 @@ import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
 import org.sonarsource.sonarlint.ls.folders.ModuleEventsProcessor;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderBranchManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
-import org.sonarsource.sonarlint.ls.java.JavaConfigCache;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.NotebookDiagnosticPublisher;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
@@ -170,7 +169,6 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   private final LSProgressMonitor progressMonitor;
   private final HostInfoProvider hostInfoProvider;
   private final WorkspaceFolderBranchManager branchManager;
-  private final JavaConfigCache javaConfigCache;
   private final OpenEdgeConfigCache oeConfigCache;
   private final IssuesCache issuesCache;
   private final HotspotsCache securityHotspotsCache;
@@ -238,7 +236,6 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     vsCodeClient.setWorkspaceFoldersManager(workspaceFoldersManager);
     backendServiceFacade.setSettingsManager(settingsManager);
     this.fileTypeClassifier = new FileTypeClassifier(lsLogOutput);
-    javaConfigCache = new JavaConfigCache(client, openFilesCache, lsLogOutput);
     oeConfigCache = new OpenEdgeConfigCache(client, openFilesCache, lsLogOutput);
     this.settingsManager.addListener(lsLogOutput);
     this.bindingManager = new ProjectBindingManager(workspaceFoldersManager, settingsManager,
@@ -252,8 +249,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     this.workspaceFoldersManager.addListener(settingsManager);
     var smartNotifications = new SmartNotifications(client, telemetry);
     vsCodeClient.setSmartNotifications(smartNotifications);
-    this.moduleEventsProcessor = new ModuleEventsProcessor(workspaceFoldersManager, fileTypeClassifier, javaConfigCache, oeConfigCache, backendServiceFacade, settingsManager);
-    this.analysisHelper = new AnalysisHelper(client, lsLogOutput, workspaceFoldersManager, javaConfigCache, settingsManager,
+    this.moduleEventsProcessor = new ModuleEventsProcessor(workspaceFoldersManager, fileTypeClassifier, oeConfigCache, backendServiceFacade, settingsManager);
+    this.analysisHelper = new AnalysisHelper(client, lsLogOutput, workspaceFoldersManager, oeConfigCache, settingsManager,
       issuesCache, securityHotspotsCache, diagnosticPublisher,
       openNotebooksCache, notebookDiagnosticPublisher, openFilesCache);
     vsCodeClient.setAnalysisTaskExecutor(analysisHelper);
@@ -487,7 +484,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   public void didClose(DidCloseTextDocumentParams params) {
     var uri = create(params.getTextDocument().getUri());
     openFilesCache.didClose(uri);
-    javaConfigCache.didClose(uri);
+    oeConfigCache.didClose(uri);
     issuesCache.clear(uri);
     securityHotspotsCache.clear(uri);
     diagnosticPublisher.publishDiagnostics(uri, false);
@@ -615,14 +612,14 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public void didClasspathUpdate(DidClasspathUpdateParams params) {
     var projectUri = create(params.getProjectUri());
-    javaConfigCache.didClasspathUpdate(projectUri);
+    // oeConfigCache.didClasspathUpdate(projectUri);
     forcedAnalysisCoordinator.didClasspathUpdate();
   }
 
   @Override
   public void didJavaServerModeChange(DidJavaServerModeChangeParams params) {
     var serverModeEnum = ServerMode.of(params.getServerMode());
-    javaConfigCache.didServerModeChange();
+    // oeConfigCache.didServerModeChange();
     forcedAnalysisCoordinator.didServerModeChange(serverModeEnum);
   }
 

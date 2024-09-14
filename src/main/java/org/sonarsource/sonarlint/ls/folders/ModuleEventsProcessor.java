@@ -36,7 +36,7 @@ import org.sonarsource.sonarlint.ls.AnalysisClientInputFile;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.file.FileTypeClassifier;
 import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
-import org.sonarsource.sonarlint.ls.java.JavaConfigCache;
+import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.settings.WorkspaceFolderSettings;
 import org.sonarsource.sonarlint.ls.util.Utils;
@@ -46,7 +46,7 @@ import static org.sonarsource.sonarlint.ls.backend.BackendServiceFacade.ROOT_CON
 public class ModuleEventsProcessor {
 
   private final FileTypeClassifier fileTypeClassifier;
-  private final JavaConfigCache javaConfigCache;
+  private final OpenEdgeConfigCache oeConfigCache;
   private final BackendServiceFacade backendServiceFacade;
 
   private final WorkspaceFoldersManager workspaceFoldersManager;
@@ -55,10 +55,10 @@ public class ModuleEventsProcessor {
   private final SettingsManager settingsManager;
 
   public ModuleEventsProcessor(WorkspaceFoldersManager workspaceFoldersManager,
-    FileTypeClassifier fileTypeClassifier, JavaConfigCache javaConfigCache, BackendServiceFacade backendServiceFacade, SettingsManager settingsManager) {
+    FileTypeClassifier fileTypeClassifier, OpenEdgeConfigCache oeConfigCache, BackendServiceFacade backendServiceFacade, SettingsManager settingsManager) {
     this.workspaceFoldersManager = workspaceFoldersManager;
     this.fileTypeClassifier = fileTypeClassifier;
-    this.javaConfigCache = javaConfigCache;
+    this.oeConfigCache = oeConfigCache;
     this.backendServiceFacade = backendServiceFacade;
     this.settingsManager = settingsManager;
     this.asyncExecutor = Executors.newSingleThreadExecutor(Utils.threadFactory("SonarLint Language Server Module Events Processor", false));
@@ -114,11 +114,13 @@ public class ModuleEventsProcessor {
   }
 
   private boolean isTestFile(URI fileUri, WorkspaceFolderSettings settings) {
-    return fileTypeClassifier.isTest(settings, fileUri, false, () -> javaConfigCache.getOrFetch(fileUri));
+    return false;
+    // return fileTypeClassifier.isTest(settings, fileUri, false, () -> javaConfigCache.getOrFetch(fileUri));
   }
 
   private boolean isTestFile(VersionedOpenFile file, WorkspaceFolderSettings settings) {
-    return fileTypeClassifier.isTest(settings, file.getUri(), file.isJava(), () -> javaConfigCache.getOrFetch(file.getUri()));
+    return false;
+    // return fileTypeClassifier.isTest(settings, file.getUri(), file.isJava(), () -> javaConfigCache.getOrFetch(file.getUri()));
   }
 
   public void shutdown() {

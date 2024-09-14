@@ -24,9 +24,9 @@ import static java.util.Optional.ofNullable;
 
 import java.net.URI;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -81,17 +81,17 @@ public class OpenEdgeConfigCache {
         }
         return r;
       })
-      .thenApply(javaConfig -> {
-        var configOpt = ofNullable(javaConfig);
+      .thenApply(oeConfig -> {
+        var configOpt = ofNullable(oeConfig);
         oeConfigPerFileURI.put(fileUri, configOpt);
-        openFile.map(VersionedOpenFile::isJava)
+        openFile.map(VersionedOpenFile::isOpenEdge)
           .filter(Boolean::booleanValue)
-          .ifPresent(isJava -> logOutput.debug("Cached OE config for file \"" + fileUri + "\""));
+          .ifPresent(isOE -> logOutput.debug("Cached OE config for file \"" + fileUri + "\""));
         return configOpt;
       });
   }
 
-  public Map<String, String> configureOpenEdgeProperties(Set<URI> fileInTheSameModule,
+  public Map<String, String> configureOpenEdgeProperties(List<URI> fileInTheSameModule,
       Map<URI, SonarLintExtendedLanguageClient.GetOpenEdgeConfigResponse> oeConfigs) {
     Map<String, String> props = new HashMap<>();
     if (fileInTheSameModule.isEmpty())
