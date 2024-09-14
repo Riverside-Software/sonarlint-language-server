@@ -45,7 +45,7 @@ import static org.sonarsource.sonarlint.ls.util.URIUtils.getFullFileUriFromFragm
 
 public final class ShowAllLocationsCommand {
 
-  public static final String ID = "SonarLint.ShowAllLocations";
+  public static final String ID = "SonarLint.ABL.ShowAllLocations";
 
   private ShowAllLocationsCommand() {
     // NOP
