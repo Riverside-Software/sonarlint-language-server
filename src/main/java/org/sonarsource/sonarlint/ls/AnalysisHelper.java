@@ -83,19 +83,19 @@ public class AnalysisHelper {
     diagnosticPublisher.publishDiagnostics(f, false);
   }
 
-  private Map<URI, GetOpenEdgeConfigResponse> collectOEFilesWithConfig(Map<URI, VersionedOpenFile> javaFiles) {
-    Map<URI, GetOpenEdgeConfigResponse> javaFilesWithConfig = new HashMap<>();
-    javaFiles.forEach((uri, openFile) -> {
-      var javaConfigOpt = oeConfigCache.getOrFetch(uri);
-      if (javaConfigOpt.isEmpty()) {
-        clientLogger.debug(format("Analysis of Java file \"%s\" may not show all issues because SonarLint" +
+  private Map<URI, GetOpenEdgeConfigResponse> collectOEFilesWithConfig(Map<URI, VersionedOpenFile> oeFiles) {
+    Map<URI, GetOpenEdgeConfigResponse> oeFilesWithConfig = new HashMap<>();
+    oeFiles.forEach((uri, openFile) -> {
+      var oeConfigOpt = oeConfigCache.getOrFetch(uri);
+      if (oeConfigOpt.isEmpty()) {
+        clientLogger.debug(format("Analysis of OpenEdge file \"%s\" may not show all issues because SonarLint" +
           " was unable to query project configuration (classpath, source level, ...)", uri));
         clearIssueCacheAndPublishEmptyDiagnostics(uri);
       } else {
-        javaFilesWithConfig.put(uri, javaConfigOpt.get());
+        oeFilesWithConfig.put(uri, oeConfigOpt.get());
       }
     });
-    return javaFilesWithConfig;
+    return oeFilesWithConfig;
   }
 
   public void handleIssues(Map<URI, List<RaisedFindingDto>> issuesByFileUri) {
@@ -125,20 +125,20 @@ public class AnalysisHelper {
 
     var extraProperties = new HashMap<>(settings.getAnalyzerProperties());
 
-    populateJavaProperties(filesToAnalyzeUris, extraProperties);
+    populateOEProperties(filesToAnalyzeUris, extraProperties);
 
     populateCfamilyProperties(filesToAnalyzeUris, extraProperties, settings);
 
     return extraProperties;
   }
 
-  private void populateJavaProperties(List<URI> filesToAnalyzeUris, Map<String, String> extraProperties) {
-    var javaFiles = filesToAnalyzeUris.stream().map(openFilesCache::getFile).filter(Optional::isPresent).map(Optional::get)
-      .filter(VersionedOpenFile::isJava).collect(Collectors.toMap(VersionedOpenFile::getUri, identity()));
+  private void populateOEProperties(List<URI> filesToAnalyzeUris, Map<String, String> extraProperties) {
+    var oeFiles = filesToAnalyzeUris.stream().map(openFilesCache::getFile).filter(Optional::isPresent).map(Optional::get)
+      .filter(VersionedOpenFile::isOpenEdge).collect(Collectors.toMap(VersionedOpenFile::getUri, identity()));
 
-    var javaConfigs = collectOEFilesWithConfig(javaFiles);
+    var oeConfigs = collectOEFilesWithConfig(oeFiles);
 
-    extraProperties.putAll(oeConfigCache.configureOpenEdgeProperties(filesToAnalyzeUris, javaConfigs));
+    extraProperties.putAll(oeConfigCache.configureOpenEdgeProperties(filesToAnalyzeUris, oeConfigs));
   }
 
   private void populateCfamilyProperties(List<URI> filesToAnalyzeUris, Map<String,
