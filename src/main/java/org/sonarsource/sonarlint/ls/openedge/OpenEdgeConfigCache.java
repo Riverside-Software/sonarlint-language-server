@@ -101,6 +101,8 @@ public class OpenEdgeConfigCache {
     var opt = oeConfigPerFileURI.get(fileInTheSameModule.iterator().next());
     if (opt.isEmpty())
       return props;
+    if (opt.get().getProjectInfo() == null)
+      return props;
     if (!opt.get().getProjectInfo().getCatalog().isBlank())
       props.put("sonar.oe.dotnet.catalog", opt.get().getProjectInfo().getCatalog());
     props.put("sonar.sources", opt.get().getProjectInfo().getSourceDirs());
