@@ -283,16 +283,17 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
       sonarLintSettingsMap.getOrDefault(ANALYZER_PROPERTIES, Maps.newHashMap()));
     var analysisExcludes = (String) settingsMap.getOrDefault(ANALYSIS_EXCLUDES, "");
     forceIgnoreRazorFiles(analyzerProperties);
-    var solutionRelativePath = settingsMap.getOrDefault(DOTNET_DEFAULT_SOLUTION_PATH, "").toString();
-    if (!solutionRelativePath.isEmpty() && workspaceUri != null) {
+    // Ignore those settings as C# is not supported in this plugin, and uncaught exceptions were reported here
+    // var solutionRelativePath = settingsMap.getOrDefault(DOTNET_DEFAULT_SOLUTION_PATH, "").toString();
+    // if (!solutionRelativePath.isEmpty() && workspaceUri != null) {
       // uri: file:///Users/me/Documents/Sonar/roslyn
       // solutionPath: Roslyn.sln
       // we want: /Users/me/Documents/Sonar/roslyn/Roslyn.sln
-      analyzerProperties.put("sonar.cs.internal.solutionPath", Path.of(workspaceUri).resolve(solutionRelativePath).toAbsolutePath().toString());
-    }
-    analyzerProperties.put("sonar.cs.internal.useNet6", settingsMap.getOrDefault(OMNISHARP_USE_MODERN_NET, "true").toString());
-    analyzerProperties.put("sonar.cs.internal.loadProjectOnDemand", settingsMap.getOrDefault(OMNISHARP_LOAD_PROJECT_ON_DEMAND, "false").toString());
-    analyzerProperties.put("sonar.cs.internal.loadProjectsTimeout", settingsMap.getOrDefault(OMNISHARP_PROJECT_LOAD_TIMEOUT, "60").toString());
+      // analyzerProperties.put("sonar.cs.internal.solutionPath", Path.of(workspaceUri).resolve(solutionRelativePath).toAbsolutePath().toString());
+    // }
+    // analyzerProperties.put("sonar.cs.internal.useNet6", settingsMap.getOrDefault(OMNISHARP_USE_MODERN_NET, "true").toString());
+    // analyzerProperties.put("sonar.cs.internal.loadProjectOnDemand", settingsMap.getOrDefault(OMNISHARP_LOAD_PROJECT_ON_DEMAND, "false").toString());
+    // analyzerProperties.put("sonar.cs.internal.loadProjectsTimeout", settingsMap.getOrDefault(OMNISHARP_PROJECT_LOAD_TIMEOUT, "60").toString());
     settingsMap.put(ANALYZER_PROPERTIES, analyzerProperties);
     settingsMap.put(ANALYSIS_EXCLUDES, addVscodeExcludesToSonarLintExcludes(analysisExcludes, settingsMap));
 
