@@ -9,7 +9,7 @@
   </parent>
   <groupId>org.sonarsource.sonarlint.ls</groupId>
   <artifactId>sonarlint-language-server</artifactId>
-  <version>3.10.99003</version>
+  <version>3.10.99004</version>
   <packaging>jar</packaging>
   <name>SonarLint Language Server</name>
   <description>SonarLint Language Server</description>
