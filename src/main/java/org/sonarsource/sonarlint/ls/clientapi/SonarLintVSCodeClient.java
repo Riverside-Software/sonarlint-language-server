@@ -58,12 +58,14 @@ import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.jetbrains.annotations.NotNull;
 import org.sonarsource.sonarlint.core.commons.HotspotReviewStatus;
 import org.sonarsource.sonarlint.core.commons.SonarLintUserHome;
+import org.sonarsource.sonarlint.core.rpc.client.ConfigScopeNotFoundException;
 import org.sonarsource.sonarlint.core.rpc.client.SonarLintCancelChecker;
 import org.sonarsource.sonarlint.core.rpc.client.SonarLintRpcClientDelegate;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingSuggestionDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.tracking.TaintVulnerabilityDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.AssistBindingParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.AssistBindingResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.NoBindingSuggestionFoundParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.SuggestBindingParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.AssistCreatingConnectionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.AssistCreatingConnectionResponse;
@@ -311,9 +313,9 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   }
 
   @Override
-  public void noBindingSuggestionFound(String projectKey) {
+  public void noBindingSuggestionFound(NoBindingSuggestionFoundParams params) {
     var messageRequestParams = new ShowMessageRequestParams();
-    messageRequestParams.setMessage("SonarLint couldn't match the server project '" + projectKey + "' to any of the currently " +
+    messageRequestParams.setMessage("SonarLint couldn't match the server project '" + params.getProjectKey() + "' to any of the currently " +
       "open workspace folders. Please make sure the project is open in the workspace, or try configuring the binding manually.");
     messageRequestParams.setType(MessageType.Error);
     var learnMoreAction = new MessageActionItem("Learn more");
@@ -420,6 +422,11 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   @Override
   public String matchSonarProjectBranch(String configurationScopeId, String mainBranchName, Set<String> allBranchesNames, SonarLintCancelChecker cancelChecker) {
     return branchManager.matchSonarProjectBranch(configurationScopeId, mainBranchName, allBranchesNames, cancelChecker);
+  }
+
+  @Override
+  public boolean matchProjectBranch(String configurationScopeId, String branchNameToMatch, SonarLintCancelChecker cancelChecker) throws ConfigScopeNotFoundException {
+    return branchManager.matchProjectBranch(configurationScopeId, branchNameToMatch, cancelChecker);
   }
 
   @Override

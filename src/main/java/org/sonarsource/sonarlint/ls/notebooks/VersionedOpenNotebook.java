@@ -51,7 +51,6 @@ public class VersionedOpenNotebook {
 
   private final URI uri;
   private Integer notebookVersion;
-  private Integer indexedNotebookVersion;
   private final LinkedHashMap<String, TextDocumentItem> cells = new LinkedHashMap<>();
   private final List<TextDocumentItem> orderedCells = new ArrayList<>();
   private final Map<Integer, TextDocumentItem> fileLineToCell = new HashMap<>();
@@ -69,9 +68,6 @@ public class VersionedOpenNotebook {
   }
 
   private void indexCellsByLineNumber() {
-    if (notebookVersion.equals(indexedNotebookVersion)) {
-      return;
-    }
     var lineCount = 1;
     var cellCount = 1;
     for (var cell : orderedCells) {
@@ -88,7 +84,6 @@ public class VersionedOpenNotebook {
       }
       cellCount++;
     }
-    indexedNotebookVersion = notebookVersion;
   }
 
   public static VersionedOpenNotebook create(URI baseUri, int version, List<TextDocumentItem> cells, NotebookDiagnosticPublisher notebookDiagnosticPublisher) {
@@ -117,7 +112,6 @@ public class VersionedOpenNotebook {
   }
 
   public Optional<URI> getCellUri(int lineNumber) {
-    indexCellsByLineNumber();
     return Optional.ofNullable(fileLineToCell.get(lineNumber))
       .map(TextDocumentItem::getUri)
       .map(URI::create);
