@@ -98,12 +98,12 @@ import static org.sonarsource.sonarlint.ls.util.Utils.interrupted;
 public class CommandManager {
 
   // Server side
-  static final String SONARLINT_QUICK_FIX_APPLIED = "SonarLint.QuickFixApplied";
-  static final String SONARLINT_OPEN_STANDALONE_RULE_DESCRIPTION_COMMAND = "SonarLint.OpenStandaloneRuleDesc";
-  static final String SONARLINT_OPEN_RULE_DESCRIPTION_FROM_CODE_ACTION_COMMAND = "SonarLint.OpenRuleDescCodeAction";
-  static final String SONARLINT_BROWSE_TAINT_VULNERABILITY = "SonarLint.BrowseTaintVulnerability";
-  static final String SONARLINT_SHOW_TAINT_VULNERABILITY_FLOWS = "SonarLint.ShowTaintVulnerabilityFlows";
-  static final String SONARLINT_SHOW_SECURITY_HOTSPOT_FLOWS = "SonarLint.ShowSecurityHotspotFlows";
+  static final String SONARLINT_QUICK_FIX_APPLIED = "SonarLint.ABL.QuickFixApplied";
+  static final String SONARLINT_OPEN_STANDALONE_RULE_DESCRIPTION_COMMAND = "SonarLint.ABL.OpenStandaloneRuleDesc";
+  static final String SONARLINT_OPEN_RULE_DESCRIPTION_FROM_CODE_ACTION_COMMAND = "SonarLint.ABL.OpenRuleDescCodeAction";
+  static final String SONARLINT_BROWSE_TAINT_VULNERABILITY = "SonarLint.ABL.BrowseTaintVulnerability";
+  static final String SONARLINT_SHOW_TAINT_VULNERABILITY_FLOWS = "SonarLint.ABL.ShowTaintVulnerabilityFlows";
+  static final String SONARLINT_SHOW_SECURITY_HOTSPOT_FLOWS = "SonarLint.ABL.ShowSecurityHotspotFlows";
   static final List<String> SONARLINT_SERVERSIDE_COMMANDS = List.of(
     SONARLINT_QUICK_FIX_APPLIED,
     SONARLINT_OPEN_RULE_DESCRIPTION_FROM_CODE_ACTION_COMMAND,
@@ -111,8 +111,8 @@ public class CommandManager {
     SONARLINT_BROWSE_TAINT_VULNERABILITY,
     SONARLINT_SHOW_TAINT_VULNERABILITY_FLOWS);
   // Client side
-  static final String SONARLINT_DEACTIVATE_RULE_COMMAND = "SonarLint.DeactivateRule";
-  static final String RESOLVE_ISSUE = "SonarLint.ResolveIssue";
+  static final String SONARLINT_DEACTIVATE_RULE_COMMAND = "SonarLint.ABL.DeactivateRule";
+  static final String RESOLVE_ISSUE = "SonarLint.ABL.ResolveIssue";
   static final String SONARLINT_ACTION_PREFIX = "SonarLint: ";
 
   private final SonarLintExtendedLanguageClient client;
