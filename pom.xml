@@ -251,7 +251,7 @@
                   <outputDirectory>${project.build.directory}/plugins</outputDirectory>
                   <destFileName>sonarxml.jar</destFileName>
                 </artifactItem>
-                <artifactItem>
+                <!--<artifactItem>
                   <groupId>org.sonarsource.text</groupId>
                   <artifactId>sonar-text-plugin</artifactId>
                   <version>${sonar.text.version}</version>
@@ -259,7 +259,7 @@
                   <overWrite>false</overWrite>
                   <outputDirectory>${project.build.directory}/plugins</outputDirectory>
                   <destFileName>sonartext.jar</destFileName>
-                </artifactItem>
+                </artifactItem>-->
                 <artifactItem>
                   <groupId>org.sonarsource.slang</groupId>
                   <artifactId>sonar-go-plugin</artifactId>
@@ -287,7 +287,7 @@
                   <outputDirectory>${project.build.directory}/plugins</outputDirectory>
                   <destFileName>sonariac.jar</destFileName>
                 </artifactItem>
-                <artifactItem>
+                <!--<artifactItem>
                   <groupId>org.sonarsource.dotnet</groupId>
                   <artifactId>sonar-csharp-plugin</artifactId>
                   <version>${sonar.csharp.version}</version>
@@ -304,7 +304,7 @@
                   <overWrite>false</overWrite>
                   <outputDirectory>${project.build.directory}/plugins</outputDirectory>
                   <destFileName>sonarlintomnisharp.jar</destFileName>
-                </artifactItem>
+                </artifactItem>-->
               </artifactItems>
             </configuration>
           </execution>

@@ -19,11 +19,17 @@
  */
 package org.sonarsource.sonarlint.ls.folders;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+
 import org.eclipse.lsp4j.FileChangeType;
 import org.eclipse.lsp4j.FileEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,19 +41,14 @@ import org.sonarsource.sonarlint.ls.backend.BackendService;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.file.FileTypeClassifier;
 import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
-import org.sonarsource.sonarlint.ls.java.JavaConfigCache;
+import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 class ModuleEventsProcessorTest {
   ModuleEventsProcessor moduleEventsProcessor;
   WorkspaceFoldersManager workspaceFoldersManager = mock(WorkspaceFoldersManager.class);
   FileTypeClassifier fileTypeClassifier = mock(FileTypeClassifier.class);
-  JavaConfigCache javaConfigCache = mock(JavaConfigCache.class);
+  OpenEdgeConfigCache javaConfigCache = mock(OpenEdgeConfigCache.class);
   BackendServiceFacade backendServiceFacade = mock(BackendServiceFacade.class);
   SettingsManager settingsManager = mock(SettingsManager.class);
 
