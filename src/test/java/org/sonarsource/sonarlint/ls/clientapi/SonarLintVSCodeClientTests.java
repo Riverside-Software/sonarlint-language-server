@@ -98,6 +98,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttribute;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.IssueSeverity;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Language;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.RuleType;
+import org.sonarsource.sonarlint.core.rpc.protocol.common.StandardModeDetails;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.TextRangeDto;
 import org.sonarsource.sonarlint.ls.AnalysisHelper;
 import org.sonarsource.sonarlint.ls.DiagnosticPublisher;
@@ -468,7 +469,7 @@ class SonarLintVSCodeClientTests {
     assertThat(sentParams.isSonarCloud()).isFalse();
     assertThat(sentParams.token()).isEqualTo("tokenValue");
 
-    verify(client).showMessage((new MessageParams(MessageType.Info, "Connection to SonarQube was successfully created.")));
+    verify(client).showMessage((new MessageParams(MessageType.Info, "Connection to SonarQube Server was successfully created.")));
   }
 
   @Test
@@ -489,7 +490,7 @@ class SonarLintVSCodeClientTests {
     assertThat(sentParams.isSonarCloud()).isTrue();
     assertThat(sentParams.token()).isEqualTo("tokenValue");
 
-    verify(client).showMessage((new MessageParams(MessageType.Info, "Connection to SonarCloud was successfully created.")));
+    verify(client).showMessage((new MessageParams(MessageType.Info, "Connection to SonarQube Cloud was successfully created.")));
   }
 
   @Test
@@ -535,14 +536,14 @@ class SonarLintVSCodeClientTests {
 
     var projectKey = "projectKey";
     var messageRequestParams = new ShowMessageRequestParams();
-    messageRequestParams.setMessage("SonarLint couldn't match the server project '" + projectKey + "' to any of the currently open workspace folders. Please make sure the project is open in the workspace, or try configuring the binding manually.");
+    messageRequestParams.setMessage("SonarQube for VS Code couldn't match the server project '" + projectKey + "' to any of the currently open workspace folders. Please make sure the project is open in the workspace, or try configuring the binding manually.");
     messageRequestParams.setType(MessageType.Error);
     var learnMoreAction = new MessageActionItem("Learn more");
     messageRequestParams.setActions(List.of(learnMoreAction));
 
     underTest.noBindingSuggestionFound(new NoBindingSuggestionFoundParams(projectKey, false));
     verify(client).showMessageRequest(messageRequestParams);
-    verify(client).browseTo("https://docs.sonarsource.com/sonarlint/vs-code/troubleshooting/#troubleshooting-connected-mode-setup");
+    verify(client).browseTo("https://docs.sonarsource.com/sonarqube-for-ide/vs-code/troubleshooting/#troubleshooting-connected-mode-setup");
   }
 
   @Test
@@ -601,7 +602,7 @@ class SonarLintVSCodeClientTests {
     var fileUri = fileInAWorkspaceFolderPath.toUri();
     var textRangeDto = new TextRangeDto(1, 2, 3, 4);
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
-      "issueKey", FILE_PYTHON, "branch", "PR", "this is wrong",
+      "issueKey", FILE_PYTHON, "this is wrong",
       "29.09.2023", "print('ddd')", false, List.of());
     var showIssueParams = new ShowIssueParams(fileUri.toString(), issueDetailsDto);
 
@@ -624,7 +625,7 @@ class SonarLintVSCodeClientTests {
     var fileUri = fileInAWorkspaceFolderPath.toUri();
     var textRangeDto = new TextRangeDto(1, 2, 3, 4);
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
-      "issueKey", FILE_PYTHON, "bb", null, "this is wrong", "29.09.2023", "print('ddd')",
+      "issueKey", FILE_PYTHON, "this is wrong", "29.09.2023", "print('ddd')",
       false, List.of());
     when(bindingManager.getBindingIfExists(fileUri))
       .thenReturn(Optional.empty());
@@ -642,7 +643,7 @@ class SonarLintVSCodeClientTests {
     var fileUri = fileInAWorkspaceFolderPath.toUri();
     var textRangeDto = new TextRangeDto(1, 2, 3, 4);
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
-      "issueKey", FILE_PYTHON, "bb", null, "this is wrong", "29.09.2023", "print('ddd')",
+      "issueKey", FILE_PYTHON, "this is wrong", "29.09.2023", "print('ddd')",
       false, List.of());
     when(bindingManager.getBindingIfExists(fileUri))
       .thenReturn(Optional.of(new ProjectBinding("connectionId", "projectKey")));
@@ -970,14 +971,16 @@ class SonarLintVSCodeClientTests {
 
   private TaintVulnerabilityDto getTaintDto(UUID uuid) {
     return new TaintVulnerabilityDto(uuid, "serverKey", false, "ruleKey", "message",
-      Path.of("filePath"), Instant.now(), IssueSeverity.MAJOR, RuleType.BUG, List.of(),
+      Path.of("filePath"), Instant.now(), org.sonarsource.sonarlint.core.rpc.protocol.common.Either
+      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)), IssueSeverity.MAJOR, RuleType.BUG, List.of(),
       new TextRangeWithHashDto(5, 5, 5, 5, ""), "", CleanCodeAttribute.CONVENTIONAL,
       Map.of(), true);
   }
 
   private TaintIssue getTaintIssue(UUID uuid) {
     return new TaintIssue(new TaintVulnerabilityDto(uuid, "serverKey", false, "ruleKey", "message",
-      Path.of("filePath"), Instant.now(), IssueSeverity.MAJOR, RuleType.BUG, List.of(),
+      Path.of("filePath"), Instant.now(), org.sonarsource.sonarlint.core.rpc.protocol.common.Either
+      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)), IssueSeverity.MAJOR, RuleType.BUG, List.of(),
       new TextRangeWithHashDto(5, 5, 5, 5, ""), "", CleanCodeAttribute.CONVENTIONAL,
       Map.of(), true), "folderUri", true);
   }

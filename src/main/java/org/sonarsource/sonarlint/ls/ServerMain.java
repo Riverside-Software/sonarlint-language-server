@@ -20,6 +20,7 @@
 package org.sonarsource.sonarlint.ls;
 
 import com.google.common.collect.ImmutableList;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,13 +28,14 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.IVersionProvider;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 
-@Command
+@Command(versionProvider = ServerMain.MavenVersionProvider.class, mixinStandardHelpOptions = true)
 public class ServerMain implements Callable<Integer> {
 
   @Parameters(index = "0", description = "The port to which sonarlint should connect to.", defaultValue = "-1")
@@ -52,6 +54,7 @@ public class ServerMain implements Callable<Integer> {
   private CommandSpec spec;
 
   public ServerMain() {
+    // Empty, fields are set by picocli
   }
 
   public List<Path> getAnalyzers() {
@@ -98,4 +101,14 @@ public class ServerMain implements Callable<Integer> {
     System.exit(exitCode);
   }
 
+  public static class MavenVersionProvider implements IVersionProvider {
+
+    @Override
+    public String[] getVersion() throws Exception {
+      try(var versionStream = getClass().getResourceAsStream("/slls-version.txt")) {
+        var version = new String(versionStream.readAllBytes(), StandardCharsets.UTF_8);
+        return new String[] { version };
+      }
+    }
+  }
 }

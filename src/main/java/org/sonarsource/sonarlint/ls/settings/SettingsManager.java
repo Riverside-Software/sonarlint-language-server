@@ -22,6 +22,7 @@ package org.sonarsource.sonarlint.ls.settings;
 import com.google.common.collect.Maps;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.net.URI;
@@ -61,7 +62,7 @@ import static java.lang.String.format;
 import static java.util.Arrays.stream;
 import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
 import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.sonarsource.sonarlint.ls.backend.BackendServiceFacade.ROOT_CONFIGURATION_SCOPE;
+import static org.sonarsource.sonarlint.ls.backend.BackendService.ROOT_CONFIGURATION_SCOPE;
 import static org.sonarsource.sonarlint.ls.util.Utils.interrupted;
 
 public class SettingsManager implements WorkspaceFolderLifecycleListener {
@@ -256,28 +257,37 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     var filesExcludes = getConfigurationItem(VSCODE_FILE_EXCLUDES, uri);
 
     params.setItems(List.of(sonarLintConfigurationItem, defaultSolutionItem, modernDotnetItem, loadProjectsOnDemandItem, projectLoadTimeoutItem, filesExcludes));
+
     return client.configuration(params)
-      .handle((r, t) -> {
-        if (t != null) {
-          logOutput.error(format("Unable to fetch configuration of folder %s %s", uri != null ? uri.toString() : "null", t.getMessage()));
+      .handle((r, t) -> logIfConfigurationNotFound(r, t, uri))
+      .thenApply(response -> parseConfigurationResponse(params, uri, response));
+  }
+
+  private List<Object> logIfConfigurationNotFound(@Nullable List<Object> response, @Nullable Throwable throwable, @Nullable URI uri) {
+    if (throwable != null) {
+      logOutput.error(format("Unable to fetch configuration of folder %s %s", uri != null ? uri.toString() : "null", throwable.getMessage()));
+    }
+    return response;
+  }
+
+  private static Map<String, Object> parseConfigurationResponse(ConfigurationParams params, @Nullable URI uri, @Nullable List<Object> response) {
+    if (response != null) {
+      var settingsMap = new HashMap<String, Object>();
+      for (var i = 0; i < response.size(); i++) {
+        var value = response.get(i);
+        if (JsonNull.INSTANCE.equals(value)) {
+          continue;
         }
-        return r;
-      })
-      .thenApply(response -> {
-        if (response != null) {
-          var settingsMap = new HashMap<String, Object>();
-          for (var i = 0; i < response.size(); i++) {
-            settingsMap.put(params.getItems().get(i).getSection(), response.get(i));
-          }
-          if (!settingsMap.isEmpty()) {
-            var updatedProperties = updateProperties(uri, settingsMap);
-            updatedProperties.putAll(Utils.parseToMap(settingsMap.get(SONARLINT_CONFIGURATION_NAMESPACE)));
-            updatedProperties.remove(SONARLINT_CONFIGURATION_NAMESPACE);
-            return updatedProperties;
-          }
-        }
-        return Collections.emptyMap();
-      });
+        settingsMap.put(params.getItems().get(i).getSection(), value);
+      }
+      if (!settingsMap.isEmpty()) {
+        var updatedProperties = updateProperties(uri, settingsMap);
+        updatedProperties.putAll(Utils.parseToMap(settingsMap.get(SONARLINT_CONFIGURATION_NAMESPACE)));
+        updatedProperties.remove(SONARLINT_CONFIGURATION_NAMESPACE);
+        return updatedProperties;
+      }
+    }
+    return Collections.emptyMap();
   }
 
   static Map<String, Object> updateProperties(@org.jetbrains.annotations.Nullable URI workspaceUri, Map<String, Object> settingsMap) {
@@ -483,7 +493,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
   private void addIfUniqueConnectionId(Map<String, ServerConnectionSettings> serverConnections, String connectionId, ServerConnectionSettings connectionSettings) {
     if (serverConnections.containsKey(connectionId)) {
       if (DEFAULT_CONNECTION_ID.equals(connectionId)) {
-        logOutput.error("Please specify a unique 'connectionId' in your settings for each of the SonarQube/SonarCloud connections.");
+        logOutput.error("Please specify a unique 'connectionId' in your settings for each of the SonarQube (Server, Cloud) connections.");
       } else {
         logOutput.error(format("Multiple server connections with the same identifier '%s'. Fix your settings.", connectionId));
       }
@@ -510,7 +520,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
         connectionId = projectBinding.getOrDefault(SERVER_ID, projectBinding.get(CONNECTION_ID));
         if (isBlank(connectionId)) {
           if (currentSettings.getServerConnections().isEmpty()) {
-            logOutput.error("No SonarQube/SonarCloud connections defined for your binding. Please update your settings.");
+            logOutput.error("No SonarQube (Server, Cloud) connections defined for your binding. Please update your settings.");
           } else if (currentSettings.getServerConnections().size() == 1) {
             connectionId = currentSettings.getServerConnections().keySet().iterator().next();
           } else {
@@ -519,7 +529,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
             connectionId = null;
           }
         } else if (!currentSettings.getServerConnections().containsKey(connectionId)) {
-          logOutput.error(format("No SonarQube/SonarCloud connections defined for your binding with id '%s'. Please update your settings.", connectionId));
+          logOutput.error(format("No SonarQube (Server, Cloud) connections defined for your binding with id '%s'. Please update your settings.", connectionId));
         }
       }
     }

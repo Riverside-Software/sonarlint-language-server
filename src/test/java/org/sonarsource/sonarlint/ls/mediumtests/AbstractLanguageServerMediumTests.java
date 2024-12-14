@@ -19,9 +19,11 @@
  */
 package org.sonarsource.sonarlint.ls.mediumtests;
 
+import com.google.gson.JsonNull;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -88,6 +90,7 @@ import org.eclipse.lsp4j.WorkspaceFoldersChangeEvent;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.launch.LSPLauncher;
+import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -123,7 +126,9 @@ import static org.sonarsource.sonarlint.ls.settings.SettingsManager.VSCODE_FILE_
 @ExtendWith(LogTestStartAndEnd.class)
 public abstract class AbstractLanguageServerMediumTests {
 
-  protected final static boolean COMMERCIAL_ENABLED = System.getProperty("commercial") != null;
+  protected static final boolean COMMERCIAL_ENABLED = System.getProperty("commercial") != null;
+  private static final String CSHARP_OSS_PATH = fullPathToJar("sonarcsharp");
+  private static final String CSHARP_ENTERPRISE_PATH = COMMERCIAL_ENABLED ? fullPathToJar("csharpenterprise") : CSHARP_OSS_PATH;
 
   private static final Set<Path> staticTempDirs = new HashSet<>();
   private final Set<Path> instanceTempDirs = new HashSet<>();
@@ -200,19 +205,7 @@ public abstract class AbstractLanguageServerMediumTests {
   }
 
   protected static void initialize(Map<String, Object> initializeOptions, WorkspaceFolder... initFolders) throws InterruptedException, ExecutionException {
-    var initializeParams = new InitializeParams();
-    initializeParams.setTrace("messages");
-    initializeParams.setInitializationOptions(initializeOptions);
-    initializeParams.setWorkspaceFolders(List.of(initFolders));
-    initializeParams.setClientInfo(new ClientInfo("SonarLint LS Medium tests", "1.0"));
-    var clientCapabilities = new ClientCapabilities();
-    var notebookDocument = new NotebookDocumentClientCapabilities();
-    var synchronization = new NotebookDocumentSyncClientCapabilities();
-    synchronization.setDynamicRegistration(true);
-    synchronization.setExecutionSummarySupport(true);
-    notebookDocument.setSynchronization(synchronization);
-    clientCapabilities.setNotebookDocument(notebookDocument);
-    initializeParams.setCapabilities(clientCapabilities);
+    var initializeParams = getInitializeParams(initializeOptions, initFolders);
     initializeParams.getCapabilities().setWindow(new WindowClientCapabilities());
     var initializeResult = lsProxy.initialize(initializeParams).get();
     assertThat(initializeResult.getServerInfo().getName()).isEqualTo("SonarLint Language Server");
@@ -223,6 +216,33 @@ public abstract class AbstractLanguageServerMediumTests {
       assertThat(initializeResult.getCapabilities().getNotebookDocumentSync()).isNull();
     }
     lsProxy.initialized(new InitializedParams());
+  }
+
+  @NotNull
+  private static InitializeParams getInitializeParams(Map<String, Object> initializeOptions, WorkspaceFolder[] initFolders) {
+    var initializeParams = new InitializeParams();
+    initializeParams.setTrace("messages");
+
+    var actualInitOptions = new HashMap<>(initializeOptions);
+    if (initializeOptions.containsKey("additionalAttributes")) {
+      var additionalAttributes = new HashMap<>((Map<String, String>) initializeOptions.get("additionalAttributes"));
+      additionalAttributes.put("csharpOssPath", CSHARP_OSS_PATH);
+      additionalAttributes.put("csharpEnterprisePath", CSHARP_ENTERPRISE_PATH);
+      actualInitOptions.put("additionalAttributes", additionalAttributes);
+    }
+    initializeParams.setInitializationOptions(actualInitOptions);
+
+    initializeParams.setWorkspaceFolders(List.of(initFolders));
+    initializeParams.setClientInfo(new ClientInfo("SonarLint LS Medium tests", "1.0"));
+    var clientCapabilities = new ClientCapabilities();
+    var notebookDocument = new NotebookDocumentClientCapabilities();
+    var synchronization = new NotebookDocumentSyncClientCapabilities();
+    synchronization.setDynamicRegistration(true);
+    synchronization.setExecutionSummarySupport(true);
+    notebookDocument.setSynchronization(synchronization);
+    clientCapabilities.setNotebookDocument(notebookDocument);
+    initializeParams.setCapabilities(clientCapabilities);
+    return initializeParams;
   }
 
   @AfterAll
@@ -281,10 +301,8 @@ public abstract class AbstractLanguageServerMediumTests {
     for (var uri : notebooksToBeClosed) {
       lsProxy.getNotebookDocumentService().didClose(new DidCloseNotebookDocumentParams(new NotebookDocumentIdentifier(uri), List.of()));
     }
-    foldersToRemove.forEach(folderUri -> {
-      lsProxy.getWorkspaceService().didChangeWorkspaceFolders(new DidChangeWorkspaceFoldersParams(
-        new WorkspaceFoldersChangeEvent(List.of(), List.of(new WorkspaceFolder(folderUri)))));
-    });
+    foldersToRemove.forEach(folderUri -> lsProxy.getWorkspaceService().didChangeWorkspaceFolders(
+      new DidChangeWorkspaceFoldersParams(new WorkspaceFoldersChangeEvent(List.of(), List.of(new WorkspaceFolder(folderUri))))));
     instanceTempDirs.forEach(tempDirPath -> FileUtils.deleteQuietly(tempDirPath.toFile()));
     instanceTempDirs.clear();
   }
@@ -326,7 +344,6 @@ public abstract class AbstractLanguageServerMediumTests {
     Map<String, Map<String, Object>> folderSettings = new HashMap<>();
     Map<String, GetJavaConfigResponse> javaConfigs = new HashMap<>();
     Map<String, GetOpenEdgeConfigResponse> oeConfigs = new HashMap<>();
-    Map<String, String> branchNameByFolder = new HashMap<>();
     Map<String, String> referenceBranchNameByFolder = new HashMap<>();
     Map<String, Boolean> scopeReadyForAnalysis = new HashMap<>();
     CountDownLatch settingsLatch = new CountDownLatch(0);
@@ -339,10 +356,17 @@ public abstract class AbstractLanguageServerMediumTests {
     ShowRuleDescriptionParams ruleDesc;
     boolean isIgnoredByScm = false;
     boolean shouldAnalyseFile = true;
+    boolean isOpenInEditor = true;
     final AtomicInteger needCompilationDatabaseCalls = new AtomicInteger();
     final Set<String> openedLinks = new HashSet<>();
     final Set<MessageParams> shownMessages = new HashSet<>();
     final Map<String, NewCodeDefinitionDto> newCodeDefinitionCache = new HashMap<>();
+
+    void clearHotspotsAndIssuesAndConfigScopeReadiness() {
+      scopeReadyForAnalysis.clear();
+      diagnostics.clear();
+      hotspots.clear();
+    }
 
     void clear() {
       diagnostics.clear();
@@ -360,6 +384,7 @@ public abstract class AbstractLanguageServerMediumTests {
       shouldAnalyseFile = true;
       scopeReadyForAnalysis.clear();
       suggestedBindings = null;
+      isOpenInEditor = true;
     }
 
     @Override
@@ -389,6 +414,10 @@ public abstract class AbstractLanguageServerMediumTests {
       shownMessages.add(messageParams);
     }
 
+    public Set<MessageParams> getShownMessages() {
+      return shownMessages;
+    }
+
     @Override
     public CompletableFuture<MessageActionItem> showMessageRequest(ShowMessageRequestParams requestParams) {
       return CompletableFuture.completedFuture(null);
@@ -406,7 +435,18 @@ public abstract class AbstractLanguageServerMediumTests {
 
     @Override
     public void notifyProgress(ProgressParams params) {
-      System.out.println(params);
+      var progressValue = params.getValue();
+      var progressPrefix = "%%% ";
+      if (progressValue.isLeft()) {
+        try {
+          var progressMessage = progressValue.getLeft().getClass().getMethod("getMessage").invoke(progressValue);
+          System.out.println(progressPrefix + progressMessage);
+        } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+          System.out.println(progressPrefix + progressValue.getLeft());
+        }
+      } else {
+        System.out.println(progressPrefix + progressValue.getRight());
+      }
     }
 
     @Override
@@ -423,8 +463,12 @@ public abstract class AbstractLanguageServerMediumTests {
             DOTNET_DEFAULT_SOLUTION_PATH, OMNISHARP_USE_MODERN_NET, OMNISHARP_LOAD_PROJECT_ON_DEMAND, OMNISHARP_PROJECT_LOAD_TIMEOUT, VSCODE_FILE_EXCLUDES);
           result = new ArrayList<>(configurationParams.getItems().size());
           for (var item : configurationParams.getItems()) {
-            if (item.getScopeUri() == null && item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
-              result.add(globalSettings);
+            if (item.getScopeUri() == null) {
+              if (item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
+                result.add(globalSettings);
+              } else {
+                result.add(JsonNull.INSTANCE);
+              }
             } else if (item.getScopeUri() != null && !item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
               result
                 .add(Optional.ofNullable(folderSettings.get(item.getScopeUri()))
@@ -443,6 +487,11 @@ public abstract class AbstractLanguageServerMediumTests {
     @Override
     public void readyForTests() {
       readyForTestsLatch.countDown();
+    }
+
+    @Override
+    public CompletableFuture<Boolean> isOpenInEditor(String fileUri) {
+      return CompletableFuture.completedFuture(isOpenInEditor);
     }
 
     @Override
@@ -515,17 +564,6 @@ public abstract class AbstractLanguageServerMediumTests {
 
     @Override
     public void showIssueOrHotspot(ShowAllLocationsCommand.Param params) {
-    }
-
-    @Override
-    public CompletableFuture<Boolean> isIgnoredByScm(String fileUri) {
-      return CompletableFutures.computeAsync(cancelToken -> isIgnoredByScm);
-    }
-
-    @Override
-    public CompletableFuture<ShouldAnalyseFileCheckResult> shouldAnalyseFile(SonarLintExtendedLanguageServer.UriParams fileUri) {
-      return CompletableFutures.computeAsync(cancelToken -> new ShouldAnalyseFileCheckResult(shouldAnalyseFile, "reason"));
-
     }
 
     @Override

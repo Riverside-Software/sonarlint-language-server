@@ -4,12 +4,12 @@
   <parent>
     <groupId>org.sonarsource.parent</groupId>
     <artifactId>parent</artifactId>
-    <version>79.0.0.2165</version>
+    <version>82.0.0.2314</version>
     <relativePath/>
   </parent>
   <groupId>org.sonarsource.sonarlint.ls</groupId>
   <artifactId>sonarlint-language-server</artifactId>
-  <version>3.11.99001</version>
+  <version>3.13.99001</version>
   <packaging>jar</packaging>
   <name>SonarLint Language Server</name>
   <description>SonarLint Language Server</description>
@@ -24,7 +24,7 @@
 
   <properties>
     <jdk.min.version>17</jdk.min.version>
-    <sonarlint.core.version>10.7.99001</sonarlint.core.version>
+    <sonarlint.core.version>10.11.99001</sonarlint.core.version>
     <!-- Version used by Xodus -->
     <kotlin.version>1.6.10</kotlin.version>
     <!-- analyzers used for tests -->
@@ -34,14 +34,16 @@
     <sonar.python.version>4.17.0.14845</sonar.python.version>
     <sonar.html.version>3.16.0.5274</sonar.html.version>
     <sonar.xml.version>2.10.0.4108</sonar.xml.version>
-    <sonar.text.version>2.10.0.2188</sonar.text.version>
+    <sonar.text.version>2.18.0.4812</sonar.text.version>
     <sonar.go.version>1.15.0.4655</sonar.go.version>
     <sonar.iac.version>1.27.0.9518</sonar.iac.version>
     <sonar.oe.version>2.28.0</sonar.oe.version>
-    <sonarlint.omnisharp.version>1.19.0.86083</sonarlint.omnisharp.version>
+    <sonar.csharp.version>10.2.0.103721</sonar.csharp.version>
+    <sonarlint.omnisharp.version>1.25.0.100242</sonarlint.omnisharp.version>
     <gitRepositoryName>sonarlint-language-server</gitRepositoryName>
     <!-- Release: enable publication to Bintray -->
     <artifactsToPublish>${project.groupId}:${project.artifactId}:jar</artifactsToPublish>
+    <license.name>GNU LGPL v3</license.name>
   </properties>
 
   <dependencies>
@@ -51,11 +53,6 @@
       <artifactId>org.eclipse.lsp4j</artifactId>
       <!--      should be the >= than in sonarlint-rpc-java-client -->
       <version>0.21.1</version>
-    </dependency>
-    <dependency>
-      <groupId>org.sonarsource.sonarlint.core</groupId>
-      <artifactId>sonarlint-java-client-legacy</artifactId>
-      <version>${sonarlint.core.version}</version>
     </dependency>
     <dependency>
       <groupId>org.sonarsource.sonarlint.core</groupId>
@@ -291,6 +288,15 @@
                   <destFileName>sonariac.jar</destFileName>
                 </artifactItem>
                 <artifactItem>
+                  <groupId>org.sonarsource.dotnet</groupId>
+                  <artifactId>sonar-csharp-plugin</artifactId>
+                  <version>${sonar.csharp.version}</version>
+                  <type>jar</type>
+                  <overWrite>false</overWrite>
+                  <outputDirectory>${project.build.directory}/plugins</outputDirectory>
+                  <destFileName>sonarcsharp.jar</destFileName>
+                </artifactItem>
+                <artifactItem>
                   <groupId>org.sonarsource.sonarlint.omnisharp</groupId>
                   <artifactId>sonarlint-omnisharp-plugin</artifactId>
                   <version>${sonarlint.omnisharp.version}</version>
@@ -444,6 +450,13 @@
                       <artifactId>sonar-cfamily-plugin</artifactId>
                       <version>6.56.0.72172</version>
                       <destFileName>cfamily.jar</destFileName>
+                      <type>jar</type>
+                    </artifactItem>
+                    <artifactItem>
+                      <groupId>com.sonarsource.dotnet</groupId>
+                      <artifactId>sonar-csharp-enterprise-plugin</artifactId>
+                      <version>${sonar.csharp.version}</version>
+                      <destFileName>csharpenterprise.jar</destFileName>
                       <type>jar</type>
                     </artifactItem>
                   </artifactItems>

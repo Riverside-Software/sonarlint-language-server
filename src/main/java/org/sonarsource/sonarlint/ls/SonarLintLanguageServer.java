@@ -141,11 +141,11 @@ import static java.lang.String.format;
 import static java.net.URI.create;
 import static java.util.Objects.requireNonNull;
 import static java.util.Optional.ofNullable;
-import static org.sonarsource.sonarlint.ls.CommandManager.SONARLINT_OPEN_RULE_DESCRIPTION_FROM_CODE_ACTION_COMMAND;
+import static org.sonarsource.sonarlint.ls.CommandManager.SONARLINT_SHOW_ISSUE_DETAILS_FROM_CODE_ACTION_COMMAND;
 import static org.sonarsource.sonarlint.ls.CommandManager.SONARLINT_SHOW_SECURITY_HOTSPOT_FLOWS;
 import static org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.ConnectionCheckResult.failure;
 import static org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.ConnectionCheckResult.success;
-import static org.sonarsource.sonarlint.ls.backend.BackendServiceFacade.ROOT_CONFIGURATION_SCOPE;
+import static org.sonarsource.sonarlint.ls.backend.BackendService.ROOT_CONFIGURATION_SCOPE;
 import static org.sonarsource.sonarlint.ls.util.URIUtils.getFullFileUriFromFragments;
 import static org.sonarsource.sonarlint.ls.util.Utils.getConnectionNameFromConnectionCheckParams;
 import static org.sonarsource.sonarlint.ls.util.Utils.getValidateConnectionParamsForNewConnection;
@@ -196,7 +196,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   private final ExecutorService branchChangeEventExecutor;
 
   SonarLintLanguageServer(InputStream inputStream, OutputStream outputStream, Collection<Path> analyzers) {
-    this.lspThreadPool = Executors.newCachedThreadPool(Utils.threadFactory("SonarLint LSP message processor", false));
+    this.lspThreadPool = Executors.newCachedThreadPool(Utils.threadFactory("SonarQube for VS Code LSP message processor", false));
 
     var input = new ExitingInputStream(inputStream, this);
     var launcher = new Launcher.Builder<SonarLintExtendedLanguageClient>()
@@ -206,7 +206,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       .setOutput(outputStream)
       .setExecutorService(lspThreadPool)
       .create();
-    this.branchChangeEventExecutor = Executors.newSingleThreadExecutor(Utils.threadFactory("SonarLint branch change event handler", false));
+    this.branchChangeEventExecutor = Executors.newSingleThreadExecutor(Utils.threadFactory("SonarQube for VS Code branch change event handler", false));
 
     this.analyzers = analyzers;
     this.client = launcher.getRemoteProxy();
@@ -322,6 +322,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       backendServiceFacade.setTelemetryInitParams(new TelemetryInitParams(productKey, telemetryStorage,
         productName, productVersion, ideVersion, platform, architecture, additionalAttributes));
       backendServiceFacade.setOmnisharpDirectory((String) additionalAttributes.get("omnisharpDirectory"));
+      backendServiceFacade.setCsharpOssPath((String) additionalAttributes.get("csharpOssPath"));
+      backendServiceFacade.setCsharpEnterprisePath((String) additionalAttributes.get("csharpEnterprisePath"));
 
       var c = new ServerCapabilities();
       c.setTextDocumentSync(getTextDocumentSyncOptions());
@@ -445,22 +447,28 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public void didOpen(DidOpenTextDocumentParams params) {
     var uri = create(params.getTextDocument().getUri());
-    if (openNotebooksCache.isNotebook(uri)) {
-      lsLogOutput.debug(String.format("Skipping text document analysis of notebook \"%s\"", uri));
-      return;
-    }
-    var file = openFilesCache.didOpen(uri, params.getTextDocument().getLanguageId(), params.getTextDocument().getText(), params.getTextDocument().getVersion());
-    CompletableFutures.computeAsync(cancelChecker -> {
-      String configScopeId;
-      moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(file);
-      var maybeWorkspaceFolder = workspaceFoldersManager.findFolderForFile(uri);
-      if (maybeWorkspaceFolder.isPresent()) {
-        configScopeId = maybeWorkspaceFolder.get().getUri().toString();
+    client.isOpenInEditor(uri.toString()).thenAccept(isOpen -> {
+      if (Boolean.TRUE.equals(isOpen)) {
+        if (openNotebooksCache.isNotebook(uri)) {
+          lsLogOutput.debug(String.format("Skipping text document analysis of notebook \"%s\"", uri));
+          return;
+        }
+        var file = openFilesCache.didOpen(uri, params.getTextDocument().getLanguageId(), params.getTextDocument().getText(), params.getTextDocument().getVersion());
+        CompletableFutures.computeAsync(cancelChecker -> {
+          String configScopeId;
+          moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(file);
+          var maybeWorkspaceFolder = workspaceFoldersManager.findFolderForFile(uri);
+          if (maybeWorkspaceFolder.isPresent()) {
+            configScopeId = maybeWorkspaceFolder.get().getUri().toString();
+          } else {
+            configScopeId = ROOT_CONFIGURATION_SCOPE;
+          }
+          backendServiceFacade.getBackendService().didOpenFile(configScopeId, uri);
+          return null;
+        });
       } else {
-        configScopeId = ROOT_CONFIGURATION_SCOPE;
+        lsLogOutput.debug(String.format("Skipping analysis of file not open in the editor: \"%s\"", uri));
       }
-      backendServiceFacade.getBackendService().didOpenFile(configScopeId, uri);
-      return null;
     });
   }
 
@@ -474,7 +482,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     } else {
       // VSCode sends us full file content in the change event
       CompletableFutures.computeAsync(cancelChecker -> {
-        moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(file.get());
+        moduleEventsProcessor.notifyBackendWithUpdatedContent(file.get());
         return null;
       });
     }
@@ -579,7 +587,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     } else {
       var file = openNotebook.get().asVersionedOpenFile();
       CompletableFutures.computeAsync(cancelChecker -> {
-        moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(file);
+        moduleEventsProcessor.notifyBackendWithUpdatedContent(file);
         return null;
       });
     }
@@ -719,11 +727,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public CompletableFuture<Void> showHotspotRuleDescription(ShowHotspotRuleDescriptionParams params) {
     var fileUri = params.fileUri;
-    var ruleKey = params.ruleKey;
-    var issue = securityHotspotsCache.get(create(fileUri)).get(params.getHotspotId());
-    var ruleContextKey = Objects.isNull(issue) ? "" : issue.getRuleDescriptionContextKey();
-    var showHotspotCommandParams = new ExecuteCommandParams(SONARLINT_OPEN_RULE_DESCRIPTION_FROM_CODE_ACTION_COMMAND,
-      List.of(new JsonPrimitive(ruleKey), new JsonPrimitive(fileUri), new JsonPrimitive(ruleContextKey != null ? ruleContextKey : "")));
+    var showHotspotCommandParams = new ExecuteCommandParams(SONARLINT_SHOW_ISSUE_DETAILS_FROM_CODE_ACTION_COMMAND,
+      List.of(new JsonPrimitive(params.getHotspotId()), new JsonPrimitive(fileUri)));
     return CompletableFutures.computeAsync(cancelToken -> {
       cancelToken.checkCanceled();
       commandManager.executeCommand(showHotspotCommandParams, cancelToken);
@@ -746,7 +751,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     // addPluginPathOrWarn("text", Language.SECRETS, plugins);
     // addPluginPathOrWarn("go", Language.GO, plugins);
     // addPluginPathOrWarn("iac", Language.CLOUDFORMATION, plugins);
-    // addPluginPathOrWarn("lintomnisharp", Language.CS, plugins);
+    // analyzers.stream().filter(it -> it.toString().endsWith("sonarlintomnisharp.jar")).findFirst()
+    //   .ifPresent(p -> plugins.put("omnisharp", p));
     return plugins;
   }
 
@@ -864,7 +870,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       client.showMessage(new MessageParams(MessageType.Info, "Issue status was changed"));
     }).exceptionally(t -> {
       lsLogOutput.errorWithStackTrace("Error changing issue status", t);
-      client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the issue. Look at the SonarLint output for details."));
+      client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the issue. Look at the SonarQube for IDE output for details."));
       return null;
     }).thenAccept(unused -> {
       if (!StringUtils.isEmpty(params.getComment())) {
@@ -888,10 +894,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public CompletableFuture<SonarLintExtendedLanguageClient.ShowRuleDescriptionParams> getHotspotDetails(ShowHotspotRuleDescriptionParams params) {
     var fileUri = params.fileUri;
-    var ruleKey = params.ruleKey;
-    var hotspot = securityHotspotsCache.get(create(fileUri)).get(params.getHotspotId());
-    var ruleContextKey = Objects.isNull(hotspot) ? "" : hotspot.getRuleDescriptionContextKey();
-    return commandManager.getShowRuleDescriptionParams(fileUri, ruleKey, ruleContextKey != null ? ruleContextKey : "");
+    return commandManager.getFindingDetails(fileUri, params.getHotspotId());
   }
 
   @Override
@@ -913,7 +916,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       client.showMessage(new MessageParams(MessageType.Info, "Hotspot status was changed"));
     }).exceptionally(t -> {
       lsLogOutput.errorWithStackTrace("Error changing hotspot status", t);
-      client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the hotspot. Look at the SonarLint output for details."));
+      client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the hotspot. Look at the SonarQube for IDE output for details."));
       return null;
     });
   }
@@ -939,7 +942,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
         statuses);
     }).exceptionally(t -> {
       lsLogOutput.errorWithStackTrace("Error changing hotspot status", t);
-      client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the hotspot. Look at the SonarLint output for details."));
+      client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the hotspot. Look at the SonarQube for IDE output for details."));
       return null;
     });
   }
@@ -960,7 +963,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       return r;
     }).exceptionally(e -> {
       lsLogOutput.errorWithStackTrace("Error while reopening resolved local issues", e);
-      client.showMessage(new MessageParams(MessageType.Error, "Could not reopen resolved local issues. Look at the SonarLint output for details."));
+      client.showMessage(new MessageParams(MessageType.Error, "Could not reopen resolved local issues. Look at the SonarQube for IDE output for details."));
       return null;
     });
   }

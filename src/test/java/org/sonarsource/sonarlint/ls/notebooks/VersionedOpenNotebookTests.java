@@ -45,8 +45,10 @@ import org.sonarsource.sonarlint.core.rpc.protocol.client.issue.RaisedFindingDto
 import org.sonarsource.sonarlint.core.rpc.protocol.client.issue.RaisedIssueDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.issue.TextEditDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttribute;
+import org.sonarsource.sonarlint.core.rpc.protocol.common.Either;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.IssueSeverity;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.RuleType;
+import org.sonarsource.sonarlint.core.rpc.protocol.common.StandardModeDetails;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.TextRangeDto;
 import org.sonarsource.sonarlint.ls.connected.DelegatingFinding;
 import org.sonarsource.sonarlint.ls.connected.DelegatingIssue;
@@ -165,7 +167,7 @@ public class VersionedOpenNotebookTests {
   private static RaisedFindingDto mockRaisedFinding(@Nullable TextRangeDto textRange) {
     RaisedFindingDto raisedFinding = mock(RaisedFindingDto.class);
 
-    when(raisedFinding.getSeverity()).thenReturn(IssueSeverity.BLOCKER);
+    when(raisedFinding.getSeverityMode()).thenReturn(Either.forLeft(new StandardModeDetails(IssueSeverity.BLOCKER, RuleType.BUG)));
     when(raisedFinding.getPrimaryMessage()).thenReturn("don't do this");
     when(raisedFinding.getRuleKey()).thenReturn("squid:123");
     when(raisedFinding.getTextRange()).thenReturn(textRange);
@@ -517,6 +519,7 @@ public class VersionedOpenNotebookTests {
       null,
       "ruleKey",
       "message",
+      Either.forLeft(new StandardModeDetails(IssueSeverity.BLOCKER, RuleType.BUG)),
       IssueSeverity.BLOCKER,
       RuleType.BUG,
       CleanCodeAttribute.TRUSTWORTHY,

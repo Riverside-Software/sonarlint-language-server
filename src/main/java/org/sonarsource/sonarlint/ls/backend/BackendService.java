@@ -34,8 +34,6 @@ import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.sonarsource.sonarlint.core.rpc.protocol.SonarLintRpcServer;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalyzeFileListParams;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalyzeFilesAndTrackParams;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalyzeFilesResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalyzeFullProjectParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeAnalysisPropertiesParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeClientNodeJsPathParams;
@@ -81,6 +79,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.OpenHotspotIn
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.InitializeParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.AddIssueCommentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.ChangeIssueStatusParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.GetEffectiveIssueDetailsParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.GetEffectiveIssueDetailsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.ReopenAllIssuesForFileParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.ReopenAllIssuesForFileResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.newcode.GetNewCodeDefinitionParams;
@@ -107,9 +107,9 @@ import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.util.EnumLabelsMapper;
 
-import static org.sonarsource.sonarlint.ls.backend.BackendServiceFacade.ROOT_CONFIGURATION_SCOPE;
-
 public class BackendService {
+
+  public static final String ROOT_CONFIGURATION_SCOPE = "<root>";
 
   private final SonarLintRpcServer backend;
   private final LanguageClientLogger logOutput;
@@ -265,7 +265,7 @@ public class BackendService {
       .exceptionally(t -> {
         logOutput.errorWithStackTrace("Error getting issue status change permissions", t);
         client.logMessage(new MessageParams(MessageType.Error, "Could not get issue status change for issue \""
-          + issueKey + "\". Look at the SonarLint output for details."));
+          + issueKey + "\". Look at the SonarQube for IDE output for details."));
         return null;
       });
   }
@@ -278,7 +278,7 @@ public class BackendService {
     return initializedBackend().getIssueService().addComment(params)
       .exceptionally(t -> {
         logOutput.errorWithStackTrace("Error adding issue comment", t);
-        client.showMessage(new MessageParams(MessageType.Error, "Could not add a new issue comment. Look at the SonarLint output for " +
+        client.showMessage(new MessageParams(MessageType.Error, "Could not add a new issue comment. Look at the SonarQube for IDE output for " +
           "details."));
         return null;
       });
@@ -346,8 +346,8 @@ public class BackendService {
     return initializedBackend().getConnectionService().getAllProjects(new GetAllProjectsParams(transientConnection));
   }
 
-  public void updateFileSystem(List<URI> deletedFileUris, List<ClientFileDto> addedOrChangedFiles) {
-    initializedBackend().getFileService().didUpdateFileSystem(new DidUpdateFileSystemParams(deletedFileUris, addedOrChangedFiles));
+  public void updateFileSystem(List<ClientFileDto> addedFiles, List<ClientFileDto> changedFiles, List<URI> deletedFileUris) {
+    initializedBackend().getFileService().didUpdateFileSystem(new DidUpdateFileSystemParams(addedFiles, changedFiles, deletedFileUris));
   }
 
   public CompletableFuture<ListAllResponse> getAllTaints(String folderUri) {
@@ -363,13 +363,6 @@ public class BackendService {
 
   public SonarLintRpcServer getBackend() {
     return backend;
-  }
-
-  public CompletableFuture<AnalyzeFilesResponse> analyzeFilesAndTrack(String configScopeId, UUID analysisId, List<URI> filesToAnalyze,
-    Map<String, String> extraProps, boolean shouldFetchServerIssues) {
-    var params = new AnalyzeFilesAndTrackParams(configScopeId, analysisId, filesToAnalyze, extraProps,
-      shouldFetchServerIssues, System.currentTimeMillis());
-    return backend.getAnalysisService().analyzeFilesAndTrack(params);
   }
 
   public CompletableFuture<ListUserOrganizationsResponse> listUserOrganizations(String token) {
@@ -405,5 +398,11 @@ public class BackendService {
   public void didChangePathToCompileCommands(String configScopeId, @Nullable String pathToCompileCommands) {
     var params = new DidChangePathToCompileCommandsParams(configScopeId, pathToCompileCommands == null ? "" : pathToCompileCommands);
     initializedBackend().getAnalysisService().didChangePathToCompileCommands(params);
+  }
+
+  public CompletableFuture<GetEffectiveIssueDetailsResponse> getEffectiveIssueDetails(@Nullable String workspaceFolder, UUID issueKey) {
+    var workspaceOrRootScope = Optional.ofNullable(workspaceFolder).orElse(ROOT_CONFIGURATION_SCOPE);
+    var params = new GetEffectiveIssueDetailsParams(workspaceOrRootScope, issueKey);
+    return initializedBackend().getIssueService().getEffectiveIssueDetails(params);
   }
 }

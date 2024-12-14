@@ -34,7 +34,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -113,7 +112,6 @@ import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.progress.LSProgressMonitor;
-import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.standalone.notifications.PromotionalNotifications;
 import org.sonarsource.sonarlint.ls.util.Utils;
@@ -121,14 +119,13 @@ import org.sonarsource.sonarlint.ls.util.Utils;
 import static java.lang.String.format;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toList;
-import static org.sonarsource.sonarlint.ls.backend.BackendServiceFacade.ROOT_CONFIGURATION_SCOPE;
-import static org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings.SONARCLOUD_URL;
+import static org.sonarsource.sonarlint.ls.backend.BackendService.ROOT_CONFIGURATION_SCOPE;
 import static org.sonarsource.sonarlint.ls.util.URIUtils.getFullFileUriFromFragments;
 import static org.sonarsource.sonarlint.ls.util.Utils.convertMessageType;
 
 public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
 
-  public static final String SONARLINT_SOURCE = "sonarlint";
+  public static final String SONARLINT_SOURCE = "sonarqube";
   private final SonarLintExtendedLanguageClient client;
   private SettingsManager settingsManager;
   private SmartNotifications smartNotifications;
@@ -272,31 +269,15 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
       isSonarCloud ? params.getConnectionParams().getRight().getOrganizationKey() : params.getConnectionParams().getLeft().getServerUrl(),
       tokenValue));
     return workspaceFoldersFuture.thenCombine(assistCreatingConnectionFuture, (workspaceFolders, assistCreatingConnectionResponse) -> {
-      var currentConnections = getCurrentConnections(params, assistCreatingConnectionResponse);
       var newConnectionId = assistCreatingConnectionResponse.getNewConnectionId();
       if (newConnectionId != null) {
-        var serverProductName = isSonarCloud ? "SonarCloud" : "SonarQube";
+        var serverProductName = isSonarCloud ? "SonarQube Cloud" : "SonarQube Server";
         client.showMessage(new MessageParams(MessageType.Info, format("Connection to %s was successfully created.", serverProductName)));
-        backendServiceFacade.getBackendService().didChangeConnections(currentConnections);
         return new AssistCreatingConnectionResponse(newConnectionId);
       } else {
         throw new CancellationException("Automatic connection setup was cancelled");
       }
     }).join();
-  }
-
-  @NotNull
-  private HashMap<String, ServerConnectionSettings> getCurrentConnections(AssistCreatingConnectionParams params,
-    @Nullable SonarLintExtendedLanguageClient.AssistCreatingConnectionResponse assistCreatingConnectionResponse) {
-    if (assistCreatingConnectionResponse == null) {
-      throw new CancellationException("Automatic connection setup was cancelled");
-    }
-    var serverUrl = params.getConnectionParams().isLeft() ? params.getConnectionParams().getLeft().getServerUrl() : SONARCLOUD_URL;
-    var organisationKey = params.getConnectionParams().isRight() ? params.getConnectionParams().getRight().getOrganizationKey() : null;
-    var newConnection = new ServerConnectionSettings(assistCreatingConnectionResponse.getNewConnectionId(), serverUrl, params.getTokenValue(), organisationKey, false);
-    var currentConnections = new HashMap<>(settingsManager.getCurrentSettings().getServerConnections());
-    currentConnections.put(assistCreatingConnectionResponse.getNewConnectionId(), newConnection);
-    return currentConnections;
   }
 
   @Override
@@ -315,7 +296,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   @Override
   public void noBindingSuggestionFound(NoBindingSuggestionFoundParams params) {
     var messageRequestParams = new ShowMessageRequestParams();
-    messageRequestParams.setMessage("SonarLint couldn't match the server project '" + params.getProjectKey() + "' to any of the currently " +
+    messageRequestParams.setMessage("SonarQube for VS Code couldn't match the server project '" + params.getProjectKey() + "' to any of the currently " +
       "open workspace folders. Please make sure the project is open in the workspace, or try configuring the binding manually.");
     messageRequestParams.setType(MessageType.Error);
     var learnMoreAction = new MessageActionItem("Learn more");
@@ -323,7 +304,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     client.showMessageRequest(messageRequestParams)
       .thenAccept(action -> {
         if (learnMoreAction.equals(action)) {
-          client.browseTo("https://docs.sonarsource.com/sonarlint/vs-code/troubleshooting/#troubleshooting-connected-mode-setup");
+          client.browseTo("https://docs.sonarsource.com/sonarqube-for-ide/vs-code/troubleshooting/#troubleshooting-connected-mode-setup");
         }
       });
   }

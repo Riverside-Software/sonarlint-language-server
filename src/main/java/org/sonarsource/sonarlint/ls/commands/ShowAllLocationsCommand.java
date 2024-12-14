@@ -67,7 +67,8 @@ public final class ShowAllLocationsCommand {
     private Param(DelegatingFinding issue) {
       this.fileUri = issue.getFileUri();
       this.message = issue.getMessage();
-      this.severity = issue.getSeverity().toString();
+      var issueSeverity = issue.getSeverity();
+      this.severity = issueSeverity != null ? issueSeverity.toString() : "";
       this.ruleKey = issue.getRuleKey();
       this.flows = issue.flows().stream().map(Flow::new).toList();
       this.textRange = issue.getTextRange();
@@ -111,7 +112,7 @@ public final class ShowAllLocationsCommand {
     Param(TaintIssue taint, String connectionId, Map<URI, LocalCodeFile> localFileCache) {
       this.fileUri = getFullFileUriFromFragments(taint.getWorkspaceFolderUri(), taint.getIdeFilePath());
       this.message = taint.getMessage();
-      this.severity = taint.getSeverity().toString();
+      this.severity = taint.getSeverityMode().isLeft() ? taint.getSeverityMode().getLeft().getSeverity().toString() : "";
       this.ruleKey = taint.getRuleKey();
       this.flows = taint.getFlows().stream().map(f -> new Flow(f, localFileCache, taint.getWorkspaceFolderUri())).toList();
       this.textRange = textRangeWithHashDtoToTextRangeDto(taint.getTextRange());

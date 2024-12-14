@@ -27,8 +27,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.lsp4j.FileChangeType;
 import org.eclipse.lsp4j.FileEvent;
+import org.jetbrains.annotations.NotNull;
 import org.sonarsource.sonarlint.core.commons.api.SonarLanguage;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.ClientFileDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Language;
@@ -41,7 +43,7 @@ import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.settings.WorkspaceFolderSettings;
 import org.sonarsource.sonarlint.ls.util.Utils;
 
-import static org.sonarsource.sonarlint.ls.backend.BackendServiceFacade.ROOT_CONFIGURATION_SCOPE;
+import static org.sonarsource.sonarlint.ls.backend.BackendService.ROOT_CONFIGURATION_SCOPE;
 
 public class ModuleEventsProcessor {
 
@@ -70,32 +72,43 @@ public class ModuleEventsProcessor {
 
   private void notifyBackend(List<FileEvent> changes) {
     List<URI> deletedFileUris = new ArrayList<>();
-    List<ClientFileDto> addedOrChangedFiles = new ArrayList<>();
+    List<ClientFileDto> addedFiles = new ArrayList<>();
+    List<ClientFileDto> changedFiles = new ArrayList<>();
     changes.forEach(event -> {
       var fileUri = URI.create(event.getUri());
       if (event.getType() == FileChangeType.Deleted) {
         deletedFileUris.add(fileUri);
       } else {
-        workspaceFoldersManager.findFolderForFile(fileUri)
-          .ifPresent(folder -> {
-            var settings = folder.getSettings();
-            var baseDir = folder.getRootPath();
-            var fsPath = Paths.get(fileUri);
-            var relativePath = baseDir.relativize(fsPath);
-            var folderUri = folder.getUri().toString();
-            var isTest = isTestFile(fileUri, settings);
-            addedOrChangedFiles.add(new ClientFileDto(fileUri, relativePath, folderUri, isTest, StandardCharsets.UTF_8.name(), fsPath, null, null, true));
-          });
+        var clientFileDto = getClientFileDto(new VersionedOpenFile(fileUri, null, 0, null));
+        if (event.getType() == FileChangeType.Created) {
+          addedFiles.add(clientFileDto);
+        } else {
+          changedFiles.add(clientFileDto);
+        }
       }
     });
-    backendServiceFacade.getBackendService().updateFileSystem(deletedFileUris, addedOrChangedFiles);
+    backendServiceFacade.getBackendService().updateFileSystem(addedFiles, changedFiles, deletedFileUris);
   }
 
   public void notifyBackendWithFileLanguageAndContent(VersionedOpenFile file) {
-    List<ClientFileDto> filesToNotify = new ArrayList<>();
+    var openedFileDto = getClientFileDto(file);
+    // We are simply enriching already added files with language and content information; The files were not actually modified
+    // i.e. didOpen
+    backendServiceFacade.getBackendService().updateFileSystem(List.of(openedFileDto), List.of(), List.of());
+  }
+
+  public void notifyBackendWithUpdatedContent(VersionedOpenFile file) {
+    var changedFileDto = getClientFileDto(file);
+    backendServiceFacade.getBackendService().updateFileSystem(List.of(), List.of(changedFileDto), List.of());
+  }
+
+  @NotNull
+  ClientFileDto getClientFileDto(VersionedOpenFile file) {
+    AtomicReference<ClientFileDto> clientFileDto = new AtomicReference<>();
     var fileUri = file.getUri();
     var fsPath = Paths.get(fileUri);
-    SonarLanguage sqLanguage = AnalysisClientInputFile.toSqLanguage(file.getLanguageId().toLowerCase(Locale.ROOT));
+    SonarLanguage sqLanguage = file.getLanguageId() != null ?
+      AnalysisClientInputFile.toSqLanguage(file.getLanguageId().toLowerCase(Locale.ROOT)) : null;
     workspaceFoldersManager.findFolderForFile(fileUri)
       .ifPresentOrElse(folder -> {
         var settings = folder.getSettings();
@@ -103,14 +116,14 @@ public class ModuleEventsProcessor {
         var relativePath = baseDir.relativize(fsPath);
         var folderUri = folder.getUri().toString();
         var isTest = isTestFile(file, settings);
-        filesToNotify.add(new ClientFileDto(fileUri, relativePath, folderUri, isTest, StandardCharsets.UTF_8.name(),
+        clientFileDto.set(new ClientFileDto(fileUri, relativePath, folderUri, isTest, StandardCharsets.UTF_8.name(),
           fsPath, file.getContent(), sqLanguage != null ? Language.valueOf(sqLanguage.name()) : null, true));
       }, () -> {
         var isTest = isTestFile(file, settingsManager.getCurrentDefaultFolderSettings());
-        filesToNotify.add(new ClientFileDto(fileUri, fsPath, ROOT_CONFIGURATION_SCOPE, isTest, StandardCharsets.UTF_8.name(),
+        clientFileDto.set(new ClientFileDto(fileUri, fsPath, ROOT_CONFIGURATION_SCOPE, isTest, StandardCharsets.UTF_8.name(),
           fsPath, file.getContent(), sqLanguage != null ? Language.valueOf(sqLanguage.name()) : null, true));
       });
-    backendServiceFacade.getBackendService().updateFileSystem(List.of(), filesToNotify);
+    return clientFileDto.get();
   }
 
   private boolean isTestFile(URI fileUri, WorkspaceFolderSettings settings) {

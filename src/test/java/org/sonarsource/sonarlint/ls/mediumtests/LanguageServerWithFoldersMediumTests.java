@@ -19,6 +19,7 @@
  */
 package org.sonarsource.sonarlint.ls.mediumtests;
 
+import com.google.gson.JsonObject;
 import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.List;
@@ -123,8 +124,8 @@ class LanguageServerWithFoldersMediumTests extends AbstractLanguageServerMediumT
     awaitUntilAsserted(() -> assertThat(client.getDiagnostics(uriInFolder))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(1, 2, 1, 6, PYTHON_S1481, "sonarlint", "Remove the unused local variable \"toto\".", DiagnosticSeverity.Warning),
-        tuple(2, 2, 2, 7, PYTHON_S1481, "sonarlint", "Remove the unused local variable \"plouf\".", DiagnosticSeverity.Warning)));
+        tuple(1, 2, 1, 6, PYTHON_S1481, "sonarqube", "Remove the unused local variable \"toto\".", DiagnosticSeverity.Warning),
+        tuple(2, 2, 2, 7, PYTHON_S1481, "sonarqube", "Remove the unused local variable \"plouf\".", DiagnosticSeverity.Warning)));
 
     client.logs.clear();
 
@@ -137,6 +138,22 @@ class LanguageServerWithFoldersMediumTests extends AbstractLanguageServerMediumT
 
     // File is considered as test file
     assertThat(client.getDiagnostics(uriOutsideFolder)).isEmpty();
+  }
+
+  @Test
+  void doNotAnalyzePythonFileOnPreview() {
+    setShowVerboseLogs(client.globalSettings, true);
+    notifyConfigurationChangeOnClient();
+    client.isOpenInEditor = false;
+
+    var uri = folder1BaseDir.resolve("doNotAnalyzePythonFileOnPreview.py").toUri().toString();
+
+    didOpen(uri, "python", "def foo():\n  print 'toto'\n");
+
+    awaitUntilAsserted(() -> assertThat(client.logs)
+      .extracting(withoutTimestamp())
+      .contains(String.format("[Debug] Skipping analysis of file not open in the editor: \"%s\"", uri)));
+    assertThat(client.getDiagnostics(uri)).isEmpty();
   }
 
   @Test
@@ -206,14 +223,21 @@ class LanguageServerWithFoldersMediumTests extends AbstractLanguageServerMediumT
 
   @Test
   void shouldOpenRuleDescFromCodeAction() throws Exception {
+    var file1InFolder = folder1BaseDir.resolve("file1.py").toUri().toString();
+
+    didOpen(file1InFolder, "python", "def foo():\n  toto = 0\n  plouf = 0\n");
+
+    awaitUntilAsserted(() -> assertThat(client.getDiagnostics(file1InFolder))
+      .hasSize(2));
+    var issueId = ((JsonObject) client.getDiagnostics(file1InFolder).get(0).getData()).get("entryKey").getAsString();
+
     client.showRuleDescriptionLatch = new CountDownLatch(1);
 
     lsProxy.getWorkspaceService()
       .executeCommand(new ExecuteCommandParams(
-        "SonarLint.OpenRuleDescCodeAction",
-        List.of(PYTHON_S1481, folder1BaseDir.resolve("foo.py").toUri().toString(), "")))
+        "SonarLint.ShowIssueDetailsCodeAction",
+        List.of(issueId, file1InFolder)))
       .get();
-
 
     assertTrue(client.showRuleDescriptionLatch.await(1, TimeUnit.MINUTES));
 
@@ -224,8 +248,12 @@ class LanguageServerWithFoldersMediumTests extends AbstractLanguageServerMediumT
     assertThat(client.ruleDesc.getName()).isEqualTo("Unused local variables should be removed");
     assertThat(htmlContent).contains("It is dead code,\n" +
       "contributing to unnecessary complexity and leading to confusion when reading the code.");
-    assertThat(client.ruleDesc.getType()).isEqualTo("CODE_SMELL");
-    assertThat(client.ruleDesc.getSeverity()).isEqualTo("MINOR");
+    assertThat(client.ruleDesc.getType()).isNull();
+    assertThat(client.ruleDesc.getSeverity()).isNull();
+    assertThat(client.ruleDesc.getCleanCodeAttribute()).isEqualTo("Not clear");
+    assertThat(client.ruleDesc.getCleanCodeAttributeCategory()).isEqualTo("Intentionality");
+    assertThat(client.ruleDesc.getImpacts()).containsEntry("Maintainability", "Low");
+
   }
 
   @Test
