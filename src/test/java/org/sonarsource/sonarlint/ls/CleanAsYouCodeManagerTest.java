@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2024 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -69,5 +69,6 @@ class CleanAsYouCodeManagerTest {
     verify(backendService).toggleCleanAsYouCode();
     verify(diagnosticPublisher).publishDiagnostics(dummyFile1, false);
     verify(diagnosticPublisher).publishDiagnostics(dummyFile2, false);
+    verify(diagnosticPublisher).publishTaints();
   }
 }

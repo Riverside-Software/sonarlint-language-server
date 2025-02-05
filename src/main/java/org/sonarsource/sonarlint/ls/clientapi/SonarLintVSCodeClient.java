@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2024 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -195,13 +195,14 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
 
   @Override
   public void log(LogParams params) {
+    var prefix = String.format("[%s : %s] ", params.getLoggerName(), params.getThreadName());
     var rawMessage = params.getMessage();
-    var sanitizedMessage = rawMessage != null ? rawMessage : "null";
+    var sanitizedMessage = rawMessage != null ? prefix.concat(rawMessage) : "null";
     var level = params.getLevel();
     logOutput.log(sanitizedMessage, level);
     var stackTrace = params.getStackTrace();
     if (stackTrace != null) {
-      logOutput.log(stackTrace, level);
+      logOutput.log(prefix.concat(stackTrace), level);
     }
   }
 
@@ -455,7 +456,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
         addedTaintIssuesForFile.addAll(existingTaintVulnerabilitiesPerFile.get(fileUri));
       }
       taintVulnerabilitiesCache.reload(fileUri, addedTaintIssuesForFile);
-      diagnosticPublisher.publishDiagnostics(fileUri, true);
+      diagnosticPublisher.publishTaints(fileUri);
     });
   }
 
@@ -474,7 +475,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
       } else {
         taintVulnerabilitiesCache.reload(fileUri, dtosToTaintIssues(folderUri, updates, isSonarCloud));
       }
-      diagnosticPublisher.publishDiagnostics(fileUri, true);
+      diagnosticPublisher.publishTaints(fileUri);
     });
   }
 
@@ -542,7 +543,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
           taintsByFile.forEach((fileUri, t) -> {
             var vulnerabilities = dtosToTaintIssues(configurationScopeId, t, isSonarCloud);
             taintVulnerabilitiesCache.reload(fileUri, vulnerabilities);
-            diagnosticPublisher.publishDiagnostics(fileUri, true);
+            diagnosticPublisher.publishTaints(fileUri);
           });
 
           return null;

@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2024 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -144,6 +144,7 @@ public abstract class AbstractLanguageServerMediumTests {
   @BeforeAll
   static void startServer() throws Exception {
     System.setProperty(SonarLintTelemetry.DISABLE_PROPERTY_KEY, "true");
+    System.setProperty("sonarlint.monitoring.disabled", "true");
     SettingsManager.setSonarLintUserHomeOverride(makeStaticTempDir());
     serverSocket = new ServerSocket(0);
     var port = serverSocket.getLocalPort();
@@ -167,13 +168,14 @@ public abstract class AbstractLanguageServerMediumTests {
     var iac = fullPathToJar("sonariac");
     var html = fullPathToJar("sonarhtml");
     var java = fullPathToJar("sonarjava");
+    var javasymbolicexecution = fullPathToJar("sonarjavasymbolicexecution");
     var js = fullPathToJar("sonarjs");
     var php = fullPathToJar("sonarphp");
     var py = fullPathToJar("sonarpython");
     var text = fullPathToJar("sonartext");
     var xml = fullPathToJar("sonarxml");
     var omnisharp = fullPathToJar("sonarlintomnisharp");
-    String[] languageServerArgs = new String[]{"-port", "" + port, "-analyzers", go, java, js, php, py, html, xml, text, iac, omnisharp};
+    String[] languageServerArgs = new String[]{"-port", "" + port, "-analyzers", go, java, javasymbolicexecution, js, php, py, html, xml, text, iac, omnisharp};
     if (COMMERCIAL_ENABLED) {
       var cfamily = fullPathToJar("cfamily");
       languageServerArgs = ArrayUtils.add(languageServerArgs, cfamily);
@@ -224,12 +226,8 @@ public abstract class AbstractLanguageServerMediumTests {
     initializeParams.setTrace("messages");
 
     var actualInitOptions = new HashMap<>(initializeOptions);
-    if (initializeOptions.containsKey("additionalAttributes")) {
-      var additionalAttributes = new HashMap<>((Map<String, String>) initializeOptions.get("additionalAttributes"));
-      additionalAttributes.put("csharpOssPath", CSHARP_OSS_PATH);
-      additionalAttributes.put("csharpEnterprisePath", CSHARP_ENTERPRISE_PATH);
-      actualInitOptions.put("additionalAttributes", additionalAttributes);
-    }
+    actualInitOptions.put("csharpOssPath", CSHARP_OSS_PATH);
+    actualInitOptions.put("csharpEnterprisePath", CSHARP_ENTERPRISE_PATH);
     initializeParams.setInitializationOptions(actualInitOptions);
 
     initializeParams.setWorkspaceFolders(List.of(initFolders));
@@ -338,6 +336,7 @@ public abstract class AbstractLanguageServerMediumTests {
   protected static class FakeLanguageClient implements SonarLintExtendedLanguageClient {
 
     Map<String, List<Diagnostic>> diagnostics = new ConcurrentHashMap<>();
+    Map<String, List<Diagnostic>> taints = new ConcurrentHashMap<>();
     Map<String, List<Diagnostic>> hotspots = new ConcurrentHashMap<>();
     Queue<MessageParams> logs = new ConcurrentLinkedQueue<>();
     Map<String, Object> globalSettings = new HashMap<>();
@@ -395,6 +394,10 @@ public abstract class AbstractLanguageServerMediumTests {
       return diagnostics.getOrDefault(uri, List.of());
     }
 
+    List<Diagnostic> getTaints(String uri) {
+      return taints.getOrDefault(uri, List.of());
+    }
+
     List<Diagnostic> getHotspots(String uri) {
       return hotspots.getOrDefault(uri, List.of());
     }
@@ -407,6 +410,11 @@ public abstract class AbstractLanguageServerMediumTests {
     @Override
     public void publishSecurityHotspots(PublishDiagnosticsParams diagnostics) {
       this.hotspots.put(diagnostics.getUri(), diagnostics.getDiagnostics());
+    }
+
+    @Override
+    public void publishTaintVulnerabilities(PublishDiagnosticsParams publishDiagnosticsParams) {
+      this.taints.put(publishDiagnosticsParams.getUri(), publishDiagnosticsParams.getDiagnostics());
     }
 
     @Override
@@ -781,7 +789,7 @@ public abstract class AbstractLanguageServerMediumTests {
     return p -> p.getMessage().replaceAll("\\[(\\w*)\\s+-\\s[\\d:.]*\\]", "[$1]");
   }
 
-  protected ThrowingExtractor<? super MessageParams, String, RuntimeException> withoutTimestampAndMillis() {
+  protected static ThrowingExtractor<? super MessageParams, String, RuntimeException> withoutTimestampAndMillis() {
     return p -> p.getMessage().replaceAll("\\[(\\w*)\\s+-\\s[\\d:.]*\\]", "[$1]").replaceAll("\\d{2,4}ms", "XXXms");
   }
 
@@ -805,7 +813,7 @@ public abstract class AbstractLanguageServerMediumTests {
     return d -> d.getRange().getStart().getLine();
   }
 
-  protected void awaitUntilAsserted(ThrowingRunnable assertion) {
+  protected static void awaitUntilAsserted(ThrowingRunnable assertion) {
     await().atMost(2, MINUTES).untilAsserted(assertion);
   }
 

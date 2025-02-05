@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2024 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -321,9 +321,9 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       hostInfoProvider.initialize(clientVersion, workspaceName);
       backendServiceFacade.setTelemetryInitParams(new TelemetryInitParams(productKey, telemetryStorage,
         productName, productVersion, ideVersion, platform, architecture, additionalAttributes));
-      backendServiceFacade.setOmnisharpDirectory((String) additionalAttributes.get("omnisharpDirectory"));
-      backendServiceFacade.setCsharpOssPath((String) additionalAttributes.get("csharpOssPath"));
-      backendServiceFacade.setCsharpEnterprisePath((String) additionalAttributes.get("csharpEnterprisePath"));
+      backendServiceFacade.setOmnisharpDirectory((String) options.get("omnisharpDirectory"));
+      backendServiceFacade.setCsharpOssPath((String) options.get("csharpOssPath"));
+      backendServiceFacade.setCsharpEnterprisePath((String) options.get("csharpEnterprisePath"));
 
       var c = new ServerCapabilities();
       c.setTextDocumentSync(getTextDocumentSyncOptions());

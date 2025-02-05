@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2024 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -95,7 +95,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   private static final String PYTHON_S1481 = "python:S1481";
   private static final String PYTHON_S1313 = "python:S1313";
   private static final String PROJECT_KEY = "myProject";
-  public static final String LANGUAGES_LIST = "apex,c,cpp,cs,css,cobol,web,java,js,php,plsql,py,secrets,tsql,ts,xml,yaml,json,go,cloudformation,docker,kubernetes,terraform,azureresourcemanager";
+  public static final String LANGUAGES_LIST = "apex,c,cpp,cs,css,cobol,web,java,js,php,plsql,py,secrets,tsql,ts,xml,yaml,json,go,cloudformation,docker,kubernetes,terraform,azureresourcemanager,ansible";
 
   @RegisterExtension
   private final MockWebServerExtension mockWebServerExtension = new MockWebServerExtension();
@@ -119,9 +119,8 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
         "productName", "SLCORE tests",
         "productVersion", "0.1",
         "productKey", "productKey",
-        "additionalAttributes", Map.of(
-          "omnisharpDirectory", omnisharpDir.toString()
-        )),
+        "omnisharpDirectory", omnisharpDir.toString()
+      ),
       new WorkspaceFolder(folder1BaseDir.toUri().toString(), "My Folder 1"));
 
     var fileName1 = "analysisConnected_scan_all_hotspot_then_forget_hotspot1.py";
@@ -1433,7 +1432,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     var content = "def foo():\n  toto = 0\n  plouf = 0\n";
     didOpen(fileUri, "python", content);
 
-    awaitUntilAsserted(() -> assertThat(client.getDiagnostics(fileUri))
+    awaitUntilAsserted(() -> assertThat(client.getTaints(fileUri))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
         Diagnostic::getSeverity)
       .contains(tuple(0, 1, 0, 2, "ruleKey", "Latest SonarQube Server Analysis", "message", DiagnosticSeverity.Warning)));

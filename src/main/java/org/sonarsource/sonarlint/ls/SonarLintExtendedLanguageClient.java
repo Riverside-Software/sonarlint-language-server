@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2024 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -894,6 +894,9 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
 
   @JsonNotification("sonarlint/publishSecurityHotspots")
   void publishSecurityHotspots(PublishDiagnosticsParams publishDiagnosticsParams);
+
+  @JsonNotification("sonarlint/publishTaintVulnerabilities")
+  void publishTaintVulnerabilities(PublishDiagnosticsParams publishDiagnosticsParams);
 
   @JsonNotification("sonarlint/readyForTests")
   void readyForTests();
