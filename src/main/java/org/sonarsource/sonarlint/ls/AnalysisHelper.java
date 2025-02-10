@@ -143,6 +143,7 @@ public class AnalysisHelper {
     var oeConfigs = collectOEFilesWithConfig(oeFiles);
 
     extraProperties.putAll(oeConfigCache.configureOpenEdgeProperties(filesToAnalyzeUris, oeConfigs));
+    extraProperties.put("sonar.oe.quickfix.uppercase", Boolean.toString(settingsManager.getCurrentSettings().isQuickFixUpperCase()));
   }
 
   private void populateCfamilyProperties(List<URI> filesToAnalyzeUris, Map<String,

@@ -84,6 +84,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
   public static final String OMNISHARP_PROJECT_LOAD_TIMEOUT = "omnisharp.projectLoadTimeout";
   public static final String VSCODE_FILE_EXCLUDES = "files.exclude";
   private static final String DISABLE_TELEMETRY = "disableTelemetry";
+  private static final String QUICKFIX_UPPER_CASE = "abl.completion.upperCase";
   public static final String ANALYSIS_EXCLUDES = "analysisExcludesStandalone";
   private static final String RULES = "rules";
   private static final String TEST_FILE_PATTERN = "testFilePattern";
@@ -250,13 +251,14 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     }
     var params = new ConfigurationParams();
     var sonarLintConfigurationItem = getConfigurationItem(SONARLINT_CONFIGURATION_NAMESPACE, uri);
+    var quickFixConfigurationItem = getConfigurationItem(QUICKFIX_UPPER_CASE, uri);
     var defaultSolutionItem = getConfigurationItem(DOTNET_DEFAULT_SOLUTION_PATH, uri);
     var modernDotnetItem = getConfigurationItem(OMNISHARP_USE_MODERN_NET, uri);
     var loadProjectsOnDemandItem = getConfigurationItem(OMNISHARP_LOAD_PROJECT_ON_DEMAND, uri);
     var projectLoadTimeoutItem = getConfigurationItem(OMNISHARP_PROJECT_LOAD_TIMEOUT, uri);
     var filesExcludes = getConfigurationItem(VSCODE_FILE_EXCLUDES, uri);
 
-    params.setItems(List.of(sonarLintConfigurationItem, defaultSolutionItem, modernDotnetItem, loadProjectsOnDemandItem, projectLoadTimeoutItem, filesExcludes));
+    params.setItems(List.of(sonarLintConfigurationItem, quickFixConfigurationItem, defaultSolutionItem, modernDotnetItem, loadProjectsOnDemandItem, projectLoadTimeoutItem, filesExcludes));
 
     return client.configuration(params)
       .handle((r, t) -> logIfConfigurationNotFound(r, t, uri))
@@ -406,8 +408,11 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     var consoleParams = ((Map<String, Object>) params.getOrDefault(OUTPUT, Collections.emptyMap()));
     var showAnalyzerLogs = (Boolean) consoleParams.getOrDefault(SHOW_ANALYZER_LOGS, false);
     var showVerboseLogs = (Boolean) consoleParams.getOrDefault(SHOW_VERBOSE_LOGS, false);
+    var quickFixValue = params.getOrDefault(QUICKFIX_UPPER_CASE, "");
+    var quickFixUpperCase = Boolean.parseBoolean(quickFixValue.toString());
+
     return new WorkspaceSettings(disableTelemetry, serverConnections, rulesConfiguration.excludedRules(), rulesConfiguration.includedRules(), rulesConfiguration.ruleParameters(),
-      showAnalyzerLogs, showVerboseLogs, pathToNodeExecutable, focusOnNewCode, analysisExcludesStandalone);
+      showAnalyzerLogs, showVerboseLogs, pathToNodeExecutable, focusOnNewCode, analysisExcludesStandalone, quickFixUpperCase);
   }
 
   private Map<String, ServerConnectionSettings> parseServerConnections(Map<String, Object> params) {

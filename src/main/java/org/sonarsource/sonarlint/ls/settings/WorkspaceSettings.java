@@ -43,12 +43,13 @@ public class WorkspaceSettings {
   private final boolean showVerboseLogs;
   private final String pathToNodeExecutable;
   private final boolean focusOnNewCode;
+  private final boolean quickFixUpperCase;
 
   private final String analysisExcludes;
 
   public WorkspaceSettings(boolean disableTelemetry, Map<String, ServerConnectionSettings> connections,
     Collection<RuleKey> excludedRules, Collection<RuleKey> includedRules, Map<RuleKey, Map<String, String>> ruleParameters,
-    boolean showAnalyzerLogs, boolean showVerboseLogs, String pathToNodeExecutable, boolean focusOnNewCode, String analysisExcludes) {
+    boolean showAnalyzerLogs, boolean showVerboseLogs, String pathToNodeExecutable, boolean focusOnNewCode, String analysisExcludes, boolean quickFixUpperCase) {
     this.disableTelemetry = disableTelemetry;
     this.connections = connections;
     this.excludedRules = excludedRules;
@@ -59,6 +60,7 @@ public class WorkspaceSettings {
     this.pathToNodeExecutable = pathToNodeExecutable;
     this.focusOnNewCode = focusOnNewCode;
     this.analysisExcludes = analysisExcludes;
+    this.quickFixUpperCase = quickFixUpperCase;
   }
 
   public boolean isDisableTelemetry() {
@@ -105,9 +107,13 @@ public class WorkspaceSettings {
     return analysisExcludes;
   }
 
+  public boolean isQuickFixUpperCase() {
+    return quickFixUpperCase;
+  }
+
   @Override
   public int hashCode() {
-    return Objects.hash(disableTelemetry, focusOnNewCode, connections, excludedRules, includedRules, showAnalyzerLogs, showVerboseLogs, pathToNodeExecutable);
+    return Objects.hash(disableTelemetry, focusOnNewCode, connections, excludedRules, includedRules, showAnalyzerLogs, showVerboseLogs, pathToNodeExecutable, quickFixUpperCase);
   }
 
   @Override
@@ -126,7 +132,8 @@ public class WorkspaceSettings {
       && Objects.equals(excludedRules, other.excludedRules)
       && Objects.equals(includedRules, other.includedRules) && Objects.equals(ruleParameters, other.ruleParameters)
       && Objects.equals(showAnalyzerLogs, other.showAnalyzerLogs) && Objects.equals(showVerboseLogs, other.showVerboseLogs)
-      && Objects.equals(pathToNodeExecutable, other.pathToNodeExecutable);
+      && Objects.equals(pathToNodeExecutable, other.pathToNodeExecutable)
+      && Objects.equals(quickFixUpperCase, other.quickFixUpperCase);
   }
 
   @Override
