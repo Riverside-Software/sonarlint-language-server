@@ -43,6 +43,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.sonarsource.sonarlint.core.commons.RuleKey;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeClientNodeJsPathParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.backend.BackendInitParams;
 import org.sonarsource.sonarlint.ls.backend.BackendService;
@@ -780,10 +781,24 @@ class SettingsManagerTests {
   void shouldIgnoreRazorFiles() {
     var workspaceUri = URI.create("file:///User/user/documents/project");
     var sonarLintSettings = new JsonObject();
-    sonarLintSettings.add("disableTelemetry", new JsonPrimitive(false));
-    sonarLintSettings.add("focusOnNewCode", new JsonPrimitive(true));
     JsonObject initalAnalyzerProperties = new JsonObject();
     initalAnalyzerProperties.add("sonar.cs.file.suffixes", new JsonPrimitive(".cs,.razor"));
+    sonarLintSettings.add("analyzerProperties", initalAnalyzerProperties);
+    Map<String, Object> settingsMap = new HashMap<>(Map.of(SONARLINT_CONFIGURATION_NAMESPACE, sonarLintSettings));
+
+    var result = SettingsManager.updateProperties(workspaceUri, settingsMap);
+
+    assertThat(result).containsKey(ANALYZER_PROPERTIES);
+    var analyzerProperties = (Map<String, String>) result.get(ANALYZER_PROPERTIES);
+    assertThat(analyzerProperties).contains(entry("sonar.cs.file.suffixes", ".cs"));
+  }
+
+  @Test
+  void shouldIgnoreRazorCsFiles() {
+    var workspaceUri = URI.create("file:///User/user/documents/project");
+    var sonarLintSettings = new JsonObject();
+    JsonObject initalAnalyzerProperties = new JsonObject();
+    initalAnalyzerProperties.add("sonar.cs.file.suffixes", new JsonPrimitive(".cs,.razor,.razor.cs"));
     sonarLintSettings.add("analyzerProperties", initalAnalyzerProperties);
     Map<String, Object> settingsMap = new HashMap<>(Map.of(SONARLINT_CONFIGURATION_NAMESPACE, sonarLintSettings));
 
@@ -885,6 +900,17 @@ class SettingsManagerTests {
       entry("sonar.cs.internal.loadProjectOnDemand", "false"),
       entry("sonar.cs.internal.loadProjectsTimeout", "60"));
     assertThat(analyzerProperties.get("sonar.cs.internal.solutionPath")).isNull();
+  }
+
+  @Test
+  void shouldParseRegion() {
+    var validRegionEU = "EU";
+    var validRegionUS = "US";
+    var invalidRegion = "invalid";
+
+    assertThat(underTest.parseRegion(validRegionEU)).isEqualTo(SonarCloudRegion.EU);
+    assertThat(underTest.parseRegion(validRegionUS)).isEqualTo(SonarCloudRegion.US);
+    assertThat(underTest.parseRegion(invalidRegion)).isEqualTo(SonarCloudRegion.EU);
   }
 
   private static Map<String, Object> fromJsonString(String json) {

@@ -111,8 +111,6 @@ import org.sonarsource.sonarlint.ls.clientapi.SonarLintVSCodeClient;
 import org.sonarsource.sonarlint.ls.connected.ProjectBindingManager;
 import org.sonarsource.sonarlint.ls.connected.TaintVulnerabilitiesCache;
 import org.sonarsource.sonarlint.ls.connected.api.HostInfoProvider;
-import org.sonarsource.sonarlint.ls.connected.events.ServerSentEventsHandler;
-import org.sonarsource.sonarlint.ls.connected.events.ServerSentEventsHandlerService;
 import org.sonarsource.sonarlint.ls.connected.notifications.SmartNotifications;
 import org.sonarsource.sonarlint.ls.file.FileTypeClassifier;
 import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
@@ -177,7 +175,6 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
 
   private final NotebookDiagnosticPublisher notebookDiagnosticPublisher;
   private final PromotionalNotifications promotionalNotifications;
-  private final ServerSentEventsHandlerService serverSentEventsHandler;
   private final FileTypeClassifier fileTypeClassifier;
   private final AnalysisHelper analysisHelper;
 
@@ -256,8 +253,6 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     vsCodeClient.setAnalysisTaskExecutor(analysisHelper);
     this.forcedAnalysisCoordinator = new ForcedAnalysisCoordinator(workspaceFoldersManager, bindingManager, openFilesCache, openNotebooksCache, client, backendServiceFacade);
     vsCodeClient.setAnalysisScheduler(forcedAnalysisCoordinator);
-    this.serverSentEventsHandler = new ServerSentEventsHandler(forcedAnalysisCoordinator, bindingManager);
-    vsCodeClient.setServerSentEventsHandlerService(serverSentEventsHandler);
     bindingManager.setAnalysisManager(forcedAnalysisCoordinator);
     this.settingsManager.addListener((WorkspaceSettingsChangeListener) forcedAnalysisCoordinator);
     this.settingsManager.addListener((WorkspaceFolderSettingsChangeListener) forcedAnalysisCoordinator);
@@ -313,7 +308,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       var platform = (String) options.get("platform");
       var architecture = (String) options.get("architecture");
       var additionalAttributes = (Map<String, Object>) options.getOrDefault("additionalAttributes", Map.of());
-      var userAgent = productName + " " + productVersion;
+      var userAgent = "SonarQube for IDE (SonarLint) - Visual Studio Code " + productVersion + " - " + clientVersion;
       var clientNodePath = (String) options.get("clientNodePath");
 
       diagnosticPublisher.initialize(firstSecretDetected);
@@ -835,8 +830,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   }
 
   @Override
-  public CompletableFuture<List<OrganizationDto>> listUserOrganizations(String token) {
-    return backendServiceFacade.getBackendService().listUserOrganizations(token)
+  public CompletableFuture<List<OrganizationDto>> listUserOrganizations(ListUserOrganizationsParams params) {
+    return backendServiceFacade.getBackendService().listUserOrganizations(params.token(), params.region())
       .thenApply(ListUserOrganizationsResponse::getUserOrganizations);
   }
 

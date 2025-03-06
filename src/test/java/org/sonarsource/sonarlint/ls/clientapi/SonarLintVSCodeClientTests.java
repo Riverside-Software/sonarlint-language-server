@@ -94,10 +94,10 @@ import org.sonarsource.sonarlint.core.rpc.protocol.client.log.LogParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.message.ShowSoonUnsupportedMessageParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.plugin.DidSkipLoadingPluginParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.smartnotification.ShowSmartNotificationParams;
-import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttribute;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.IssueSeverity;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Language;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.RuleType;
+import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.StandardModeDetails;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.TextRangeDto;
 import org.sonarsource.sonarlint.ls.AnalysisHelper;
@@ -114,7 +114,6 @@ import org.sonarsource.sonarlint.ls.connected.ProjectBinding;
 import org.sonarsource.sonarlint.ls.connected.ProjectBindingManager;
 import org.sonarsource.sonarlint.ls.connected.TaintVulnerabilitiesCache;
 import org.sonarsource.sonarlint.ls.connected.api.HostInfoProvider;
-import org.sonarsource.sonarlint.ls.connected.events.ServerSentEventsHandlerService;
 import org.sonarsource.sonarlint.ls.connected.notifications.SmartNotifications;
 import org.sonarsource.sonarlint.ls.domain.TaintIssue;
 import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
@@ -163,7 +162,7 @@ class SonarLintVSCodeClientTests {
   SonarLintLogTester logTester = new SonarLintLogTester();
   private Path workspaceFolderPath;
   private Path fileInAWorkspaceFolderPath;
-  private final Path FILE_PYTHON = Path.of("myFile.py");
+  private final Path filePython = Path.of("myFile.py");
   SonarLintExtendedLanguageClient client = mock(SonarLintExtendedLanguageClient.class);
   SettingsManager settingsManager = mock(SettingsManager.class);
   SmartNotifications smartNotifications = mock(SmartNotifications.class);
@@ -173,7 +172,6 @@ class SonarLintVSCodeClientTests {
   OpenFilesCache openFilesCache = mock(OpenFilesCache.class);
   OpenNotebooksCache openNotebooksCache = mock(OpenNotebooksCache.class);
   SkippedPluginsNotifier skippedPluginsNotifier = mock(SkippedPluginsNotifier.class);
-  ServerSentEventsHandlerService serverSentEventsHandlerService = mock(ServerSentEventsHandlerService.class);
   @Captor
   ArgumentCaptor<ShowAllLocationsCommand.Param> paramCaptor;
   BackendServiceFacade backendServiceFacade = mock(BackendServiceFacade.class);
@@ -223,13 +221,12 @@ class SonarLintVSCodeClientTests {
     -----END CERTIFICATE-----""";
 
   @BeforeEach
-  public void setup() throws IOException {
+  void setup() throws IOException {
     underTest = new SonarLintVSCodeClient(client, server, logTester.getLogger(), taintVulnerabilitiesCache,
       skippedPluginsNotifier, promotionalNotifications, progressMonitor);
     underTest.setSmartNotifications(smartNotifications);
     underTest.setSettingsManager(settingsManager);
     underTest.setBindingManager(bindingManager);
-    underTest.setServerSentEventsHandlerService(serverSentEventsHandlerService);
     underTest.setBackendServiceFacade(backendServiceFacade);
     underTest.setDiagnosticPublisher(diagnosticPublisher);
     underTest.setAnalysisScheduler(forcedAnalysisCoordinator);
@@ -237,7 +234,7 @@ class SonarLintVSCodeClientTests {
     underTest.setBranchManager(branchManager);
     workspaceFolderPath = basedir.resolve("myWorkspaceFolder");
     Files.createDirectories(workspaceFolderPath);
-    fileInAWorkspaceFolderPath = workspaceFolderPath.resolve(FILE_PYTHON);
+    fileInAWorkspaceFolderPath = workspaceFolderPath.resolve(filePython);
     Files.createFile(fileInAWorkspaceFolderPath);
     Files.writeString(fileInAWorkspaceFolderPath, """
       print('1234')
@@ -351,7 +348,7 @@ class SonarLintVSCodeClientTests {
         "http://localhost:9000",
         "abcdefg",
         null,
-        false
+        false, SonarCloudRegion.EU
       ));
     when(workspaceSettings.getServerConnections()).thenReturn(serverConnections);
     when(settingsManager.getCurrentSettings()).thenReturn(workspaceSettings);
@@ -370,7 +367,7 @@ class SonarLintVSCodeClientTests {
         "https://sonarcloud.io",
         "abcdefg",
         "test-org",
-        false
+        false, SonarCloudRegion.EU
       ));
     when(workspaceSettings.getServerConnections()).thenReturn(serverConnections);
     when(settingsManager.getCurrentSettings()).thenReturn(workspaceSettings);
@@ -475,7 +472,7 @@ class SonarLintVSCodeClientTests {
   @Test
   void assistCreateConnectionShouldCallClientMethodForSonarCloud() {
     String organisationKey = "myOrg";
-    var assistCreatingConnectionParams = new AssistCreatingConnectionParams(new SonarCloudConnectionParams(organisationKey, "tokenName", "tokenValue"));
+    var assistCreatingConnectionParams = new AssistCreatingConnectionParams(new SonarCloudConnectionParams(organisationKey, "tokenName", "tokenValue", SonarCloudRegion.EU));
     when(client.workspaceFolders()).thenReturn(CompletableFuture.completedFuture(List.of()));
     when(client.assistCreatingConnection(any()))
       .thenReturn(CompletableFuture.completedFuture(new AssistCreatingConnectionResponse("newConnectionId")));
@@ -602,7 +599,7 @@ class SonarLintVSCodeClientTests {
     var fileUri = fileInAWorkspaceFolderPath.toUri();
     var textRangeDto = new TextRangeDto(1, 2, 3, 4);
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
-      "issueKey", FILE_PYTHON, "this is wrong",
+      "issueKey", filePython, "this is wrong",
       "29.09.2023", "print('ddd')", false, List.of());
     var showIssueParams = new ShowIssueParams(fileUri.toString(), issueDetailsDto);
 
@@ -625,7 +622,7 @@ class SonarLintVSCodeClientTests {
     var fileUri = fileInAWorkspaceFolderPath.toUri();
     var textRangeDto = new TextRangeDto(1, 2, 3, 4);
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
-      "issueKey", FILE_PYTHON, "this is wrong", "29.09.2023", "print('ddd')",
+      "issueKey", filePython, "this is wrong", "29.09.2023", "print('ddd')",
       false, List.of());
     when(bindingManager.getBindingIfExists(fileUri))
       .thenReturn(Optional.empty());
@@ -643,7 +640,7 @@ class SonarLintVSCodeClientTests {
     var fileUri = fileInAWorkspaceFolderPath.toUri();
     var textRangeDto = new TextRangeDto(1, 2, 3, 4);
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
-      "issueKey", FILE_PYTHON, "this is wrong", "29.09.2023", "print('ddd')",
+      "issueKey", filePython, "this is wrong", "29.09.2023", "print('ddd')",
       false, List.of());
     when(bindingManager.getBindingIfExists(fileUri))
       .thenReturn(Optional.of(new ProjectBinding("connectionId", "projectKey")));
@@ -761,7 +758,7 @@ class SonarLintVSCodeClientTests {
 
       @Override
       public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
-
+        // NOP
       }
     });
 
@@ -972,17 +969,15 @@ class SonarLintVSCodeClientTests {
   private TaintVulnerabilityDto getTaintDto(UUID uuid) {
     return new TaintVulnerabilityDto(uuid, "serverKey", false, "ruleKey", "message",
       Path.of("filePath"), Instant.now(), org.sonarsource.sonarlint.core.rpc.protocol.common.Either
-      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)), IssueSeverity.MAJOR, RuleType.BUG, List.of(),
-      new TextRangeWithHashDto(5, 5, 5, 5, ""), "", CleanCodeAttribute.CONVENTIONAL,
-      Map.of(), true);
+      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)), List.of(),
+      new TextRangeWithHashDto(5, 5, 5, 5, ""), "", true);
   }
 
   private TaintIssue getTaintIssue(UUID uuid) {
     return new TaintIssue(new TaintVulnerabilityDto(uuid, "serverKey", false, "ruleKey", "message",
       Path.of("filePath"), Instant.now(), org.sonarsource.sonarlint.core.rpc.protocol.common.Either
-      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)), IssueSeverity.MAJOR, RuleType.BUG, List.of(),
-      new TextRangeWithHashDto(5, 5, 5, 5, ""), "", CleanCodeAttribute.CONVENTIONAL,
-      Map.of(), true), "folderUri", true);
+      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)), List.of(),
+      new TextRangeWithHashDto(5, 5, 5, 5, ""), "", true), "folderUri", true);
   }
 
   public class DummyCancelChecker implements CancelChecker {

@@ -50,6 +50,7 @@ import org.eclipse.lsp4j.ConfigurationParams;
 import org.sonarsource.sonarlint.core.commons.RuleKey;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeClientNodeJsPathParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.rules.StandaloneRuleConfigDto;
+import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderLifecycleListener;
@@ -70,6 +71,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
   private static Path sonarLintUserHomeOverride = null;
 
   private static final String ORGANIZATION_KEY = "organizationKey";
+  private static final String REGION_KEY = "region";
   private static final String DISABLE_NOTIFICATIONS = "disableNotifications";
   private static final String PROJECT = "project";
   public static final String DEFAULT_CONNECTION_ID = "<default>";
@@ -358,7 +360,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
       if (currentSetting.contains(".razor")) {
         var suffixes = currentSetting.split(",");
         var newSetting = stream(suffixes)
-          .filter(suffix -> !suffix.equals(".razor"))
+          .filter(suffix -> !suffix.contains(".razor"))
           .collect(Collectors.joining(","));
         analyzerProperties.put(SONAR_CS_FILE_SUFFIXES, newSetting);
       }
@@ -436,7 +438,8 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
         var url = (String) m.get(SERVER_URL);
         var token = (String) m.get(TOKEN);
         var organization = (String) m.get(ORGANIZATION_KEY);
-        var connectionSettings = new ServerConnectionSettings(connectionId, url, token, organization, false);
+        var region = (String) m.getOrDefault(REGION_KEY, SonarCloudRegion.EU.name());
+        var connectionSettings = new ServerConnectionSettings(connectionId, url, token, organization, false, parseRegion(region));
         addIfUniqueConnectionId(serverConnections, connectionId, connectionSettings);
       }
     });
@@ -451,7 +454,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
         var url = (String) m.get(SERVER_URL);
         var token = getTokenFromClient(url);
         var disableNotifications = (Boolean) m.getOrDefault(DISABLE_NOTIFICATIONS, false);
-        var connectionSettings = new ServerConnectionSettings(connectionId, url, token, null, disableNotifications);
+        var connectionSettings = new ServerConnectionSettings(connectionId, url, token, null, disableNotifications, null);
         addIfUniqueConnectionId(serverConnections, connectionId, connectionSettings);
       }
     });
@@ -467,10 +470,20 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
         var organizationKey = (String) m.get(ORGANIZATION_KEY);
         var token = getTokenFromClient(organizationKey);
         var disableNotifs = (Boolean) m.getOrDefault(DISABLE_NOTIFICATIONS, false);
+        var region = (String) m.getOrDefault(REGION_KEY, SonarCloudRegion.EU.name());
         addIfUniqueConnectionId(serverConnections, connectionId,
-          new ServerConnectionSettings(connectionId, ServerConnectionSettings.SONARCLOUD_URL, token, organizationKey, disableNotifs));
+          new ServerConnectionSettings(connectionId, ServerConnectionSettings.SONARCLOUD_URL, token, organizationKey, disableNotifs, parseRegion(region)));
       }
     });
+  }
+
+  SonarCloudRegion parseRegion(String region) {
+    try {
+      return SonarCloudRegion.valueOf(region);
+    } catch (IllegalArgumentException e) {
+      logOutput.error(format("Unknown SonarQube Cloud region '%s'. Using default region '%s'", region, SonarCloudRegion.EU.name()));
+      return SonarCloudRegion.EU;
+    }
   }
 
   private String getTokenFromClient(String serverUrlOrOrganization) {
