@@ -9,7 +9,7 @@
   </parent>
   <groupId>org.sonarsource.sonarlint.ls</groupId>
   <artifactId>sonarlint-language-server</artifactId>
-  <version>3.16.99001</version>
+  <version>3.17-SNAPSHOT</version>
   <packaging>jar</packaging>
   <name>SonarLint Language Server</name>
   <description>SonarLint Language Server</description>
@@ -24,7 +24,8 @@
 
   <properties>
     <jdk.min.version>17</jdk.min.version>
-    <sonarlint.core.version>10.15.99001</sonarlint.core.version>
+    <sonarlint.core.version>10.16.0.80440</sonarlint.core.version>
+    <slf4j.version>2.0.17</slf4j.version>
     <!-- Version used by Xodus -->
     <kotlin.version>1.6.10</kotlin.version>
     <!-- analyzers used for tests -->
@@ -114,8 +115,8 @@
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-nop</artifactId>
-      <version>2.0.0</version>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
     </dependency>
     <!-- Needed for Xodus -->
     <dependency>
