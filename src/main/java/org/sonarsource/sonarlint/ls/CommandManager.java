@@ -128,7 +128,7 @@ public class CommandManager {
   // Client side
   static final String SONARLINT_DEACTIVATE_RULE_COMMAND = "SonarLint.ABL.DeactivateRule";
   static final String RESOLVE_ISSUE = "SonarLint.ABL.ResolveIssue";
-  static final String SONARLINT_ACTION_PREFIX = "SonarQube: ";
+  static final String SONARLINT_ACTION_PREFIX = "CABL: ";
   public static final MessageActionItem SHOW_LOGS_ACTION = new MessageActionItem("Show Logs");
   public static final MessageActionItem FIX_MANUALLY_ACTION = new MessageActionItem("Fix Manually");
   // Arbitrary limit to avoid AI CodeFix QuickFix message becoming too long
