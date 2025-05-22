@@ -38,7 +38,7 @@
     <sonar.text.version>2.20.0.5038</sonar.text.version>
     <sonar.go.version>1.18.0.240</sonar.go.version>
     <sonar.iac.version>1.40.0.13983</sonar.iac.version>
-    <sonar.oe.version>2.30.0</sonar.oe.version>
+    <sonar.oe.version>3.1.0</sonar.oe.version>
     <sonar.csharp.version>10.3.0.106239</sonar.csharp.version>
     <sonarlint.omnisharp.version>1.25.0.100242</sonarlint.omnisharp.version>
     <gitRepositoryName>sonarlint-language-server</gitRepositoryName>
