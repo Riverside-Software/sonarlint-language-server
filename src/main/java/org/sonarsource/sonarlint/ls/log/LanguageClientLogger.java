@@ -143,7 +143,7 @@ public class LanguageClientLogger implements WorkspaceSettingsChangeListener {
   }
 
   public void trace(String formattedMessage) {
-    log("Trace", formattedMessage, true);
+    // Proparse generates too many TRACE messages, just skip them
   }
 
 }
