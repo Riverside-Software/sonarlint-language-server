@@ -72,6 +72,8 @@ public class LanguageClientLogger implements WorkspaceSettingsChangeListener {
   }
 
   public void log(String formattedMessage, LogLevel level) {
+    if (level == LogLevel.TRACE)
+      return;
     log(getLogPrefix(level), formattedMessage, isDebugOrTrace(level));
   }
 
