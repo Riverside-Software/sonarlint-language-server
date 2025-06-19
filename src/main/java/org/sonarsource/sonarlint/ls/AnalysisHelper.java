@@ -137,8 +137,12 @@ public class AnalysisHelper {
   }
 
   private void populateOEProperties(List<URI> filesToAnalyzeUris, Map<String, String> extraProperties) {
-    var oeFiles = filesToAnalyzeUris.stream().map(openFilesCache::getFile).filter(Optional::isPresent).map(Optional::get)
-      .filter(VersionedOpenFile::isOpenEdge).collect(Collectors.toMap(VersionedOpenFile::getUri, identity()));
+    var oeFiles = filesToAnalyzeUris.stream() //
+        .map(openFilesCache::getFile) //
+        .filter(Optional::isPresent) //
+        .map(Optional::get) //
+        .filter(VersionedOpenFile::isOpenEdge) //
+        .collect(Collectors.toMap(VersionedOpenFile::getUri, identity(), (oldVal, newVal) -> newVal));
 
     var oeConfigs = collectOEFilesWithConfig(oeFiles);
 

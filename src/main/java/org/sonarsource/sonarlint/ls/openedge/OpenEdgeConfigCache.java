@@ -106,6 +106,7 @@ public class OpenEdgeConfigCache {
     if (!opt.get().getProjectInfo().getCatalog().isBlank())
       props.put("sonar.oe.dotnet.catalog", opt.get().getProjectInfo().getCatalog());
     props.put("sonar.sources", opt.get().getProjectInfo().getSourceDirs());
+    props.put("sonar.sourceEncoding", opt.get().getProjectInfo().getEncoding());
     props.put("sonar.oe.binaries", opt.get().getProjectInfo().getBuildDirs());
     props.put("sonar.oe.propath", opt.get().getProjectInfo().getPropath());
     props.put("sonar.oe.binary.cache1", opt.get().getProjectInfo().getRcodeCache());

@@ -695,11 +695,13 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
     private String projectRoot;
     private String sourceDirs;
     private String buildDirs;
+    private String xrefDirs;
     private String propath;
     private String rcodeCache;
     private String propathRCodeCache;
     private String schemaCache;
     private String catalog;
+    private String encoding;
 
     public String getProjectRoot() {
       return projectRoot;
@@ -723,6 +725,14 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
 
     public void setBuildDirs(String buildDirs) {
       this.buildDirs = buildDirs;
+    }
+
+    public String getXrefDirs() {
+      return xrefDirs;
+    }
+
+    public void setXrefDirs(String xrefDirs) {
+      this.xrefDirs = xrefDirs;
     }
 
     public String getPropath() {
@@ -763,6 +773,14 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
 
     public void setCatalog(String catalog) {
       this.catalog = catalog;
+    }
+
+    public String getEncoding() {
+      return encoding;
+    }
+
+    public void setEncoding(String encoding) {
+      this.encoding = encoding;
     }
   }
 
