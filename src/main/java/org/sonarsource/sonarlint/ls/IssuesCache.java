@@ -47,7 +47,7 @@ public class IssuesCache {
         issuesPerIdPerFileURI.get(fileUri).clear();
       }
       issuesPerIdPerFileURI.computeIfAbsent(fileUri, a -> new ConcurrentHashMap<>())
-        .putAll(issues.stream().collect(Collectors.toMap(i -> i.getId().toString(), i -> new DelegatingIssue(i, fileUri))));
+        .putAll(issues.stream().collect(Collectors.toMap(i -> i.getId().toString(), i -> new DelegatingIssue(i, fileUri), (oldVal, newVal) -> newVal)));
     });
   }
 
