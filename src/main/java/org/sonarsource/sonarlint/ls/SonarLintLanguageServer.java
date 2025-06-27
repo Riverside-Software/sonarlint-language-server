@@ -93,6 +93,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.GetSupported
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetSharedConnectedModeConfigFileParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetSharedConnectedModeConfigFileResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.GetConnectionSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.auth.HelpGenerateUserTokenResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.org.ListUserOrganizationsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.org.OrganizationDto;
@@ -102,6 +103,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.HotspotStatus
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.OpenHotspotInBrowserParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.AddIssueCommentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FixSuggestionStatus;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Language;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.ConnectionCheckResult;
@@ -736,6 +738,11 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     return CompletableFuture.completedFuture(null);
   }
 
+  @Override
+  public void lmToolCalled(LMToolCalledParams params) {
+    telemetry.toolCalled(params.toolName(), params.success());
+  }
+
   public Map<String, Path> getEmbeddedPluginsToPath() {
     var plugins = new HashMap<String, Path>();
     // addPluginPathOrWarn("cfamily", Language.C, plugins);
@@ -815,6 +822,11 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public CompletableFuture<GetBindingSuggestionsResponse> getBindingSuggestion(GetBindingSuggestionParams params) {
     return backendServiceFacade.getBackendService().getBindingSuggestion(params);
+  }
+
+  @Override
+  public CompletableFuture<GetConnectionSuggestionsResponse> getConnectionSuggestions(GetConnectionSuggestionsParams params) {
+    return backendServiceFacade.getBackendService().getConnectionSuggestions(params);
   }
 
   @Override

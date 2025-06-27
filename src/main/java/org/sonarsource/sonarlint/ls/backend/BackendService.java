@@ -51,6 +51,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.DidUpd
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.scope.ConfigurationScopeDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.scope.DidAddConfigurationScopesParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.scope.DidRemoveConfigurationScopeParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.GetConnectionSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.auth.HelpGenerateUserTokenParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.auth.HelpGenerateUserTokenResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.common.TransientSonarCloudConnectionDto;
@@ -99,6 +100,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.telemetry.TelemetryRp
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.tracking.ListAllParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.tracking.ListAllResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.ClientFileDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.Either;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
@@ -252,6 +254,10 @@ public class BackendService {
     return initializedBackend().getBindingService().getBindingSuggestions(params);
   }
 
+  public CompletableFuture<GetConnectionSuggestionsResponse> getConnectionSuggestions(GetConnectionSuggestionsParams params) {
+    return initializedBackend().getConnectionService().getConnectionSuggestions(params);
+  }
+
   public CompletableFuture<GetSharedConnectedModeConfigFileResponse> getSharedConnectedModeConfigFileContents(GetSharedConnectedModeConfigFileParams params) {
     return initializedBackend().getBindingService().getSharedConnectedModeConfigFileContents(params);
   }
@@ -363,10 +369,6 @@ public class BackendService {
     List<String> projectKeys) {
     var params = new GetProjectNamesByKeyParams(transientConnection, projectKeys);
     return initializedBackend().getConnectionService().getProjectNamesByKey(params);
-  }
-
-  public SonarLintRpcServer getBackend() {
-    return backend;
   }
 
   public CompletableFuture<ListUserOrganizationsResponse> listUserOrganizations(String token, String region) {

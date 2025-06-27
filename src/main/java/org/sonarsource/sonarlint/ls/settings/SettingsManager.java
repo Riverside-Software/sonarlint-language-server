@@ -383,13 +383,13 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
       var folderSettingsMap = requestSonarLintAndOmnisharpConfigurationAsync(f.getUri()).get();
       var newSettings = parseFolderSettings(folderSettingsMap, f.getUri());
       var old = f.getRawSettings();
-      notifyAnalyzerPropertiesChangeIfNeeded(old, newSettings, f.getUri().toString());
       if (!Objects.equals(old, newSettings)) {
         f.setSettings(newSettings);
         logOutput.debug(format("Workspace folder '%s' configuration updated: %s", f, newSettings));
         if (notifyOnChange) {
           folderListeners.forEach(l -> l.onChange(f, old, newSettings));
         }
+        notifyAnalyzerPropertiesChangeIfNeeded(old, newSettings, f.getUri().toString());
       }
     } catch (InterruptedException e) {
       interrupted(e, logOutput);
@@ -468,9 +468,9 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
       if (checkRequiredAttribute(m, "SonarCloud", ORGANIZATION_KEY)) {
         var connectionId = defaultIfBlank((String) m.get(CONNECTION_ID), DEFAULT_CONNECTION_ID);
         var organizationKey = (String) m.get(ORGANIZATION_KEY);
-        var token = getTokenFromClient(organizationKey);
         var disableNotifs = (Boolean) m.getOrDefault(DISABLE_NOTIFICATIONS, false);
         var region = (String) m.getOrDefault(REGION_KEY, SonarCloudRegion.EU.name());
+        var token = getTokenFromClient(region + "_" + organizationKey);
         var parsedRegion = parseRegion(region);
         addIfUniqueConnectionId(serverConnections, connectionId,
           new ServerConnectionSettings(connectionId,
