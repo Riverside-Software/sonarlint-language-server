@@ -55,11 +55,10 @@ import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.jetbrains.annotations.NotNull;
-import org.sonarsource.sonarlint.core.commons.HotspotReviewStatus;
-import org.sonarsource.sonarlint.core.commons.SonarLintUserHome;
 import org.sonarsource.sonarlint.core.rpc.client.SonarLintCancelChecker;
 import org.sonarsource.sonarlint.core.rpc.client.SonarLintRpcClientDelegate;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingSuggestionDto;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.HotspotStatus;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.tracking.TaintVulnerabilityDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.AssistBindingParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.AssistBindingResponse;
@@ -225,7 +224,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     var rule = hotspotDetails.getRule();
     var clientRule = new SonarLintExtendedLanguageClient.ShowHotspotParams.HotspotRule(rule.getKey(), rule.getName(), rule.getSecurityCategory(),
       rule.getVulnerabilityProbability(), rule.getRiskDescription(), rule.getVulnerabilityDescription(), rule.getFixRecommendations());
-    var reviewStatus = HotspotReviewStatus.TO_REVIEW.name().equals(hotspotDetails.getStatus()) ? "To Review" : "Reviewed";
+    var reviewStatus = HotspotStatus.TO_REVIEW.name().equals(hotspotDetails.getStatus()) ? "To Review" : "Reviewed";
     var showHotspotParams = new SonarLintExtendedLanguageClient.ShowHotspotParams(hotspotDetails.getKey(), hotspotDetails.getMessage(),
       hotspotDetails.getIdeFilePath().toString(),
       hotspotDetails.getTextRange(), hotspotDetails.getAuthor(), reviewStatus, hotspotDetails.getResolution(),
@@ -375,15 +374,13 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     } catch (CertificateEncodingException | IndexOutOfBoundsException e) {
       logOutput.errorWithStackTrace("Certificate encoding is malformed, SHA fingerprints will not be displayed.", e);
     }
-    var pathToActualTrustStore = SonarLintUserHome.get().resolve("ssl/truststore.p12");
     var confirmationParams = new SonarLintExtendedLanguageClient.SslCertificateConfirmationParams(
       untrustedCert == null ? "" : untrustedCert.getSubjectX500Principal().getName(),
       untrustedCert == null ? "" : untrustedCert.getIssuerX500Principal().getName(),
       untrustedCert == null ? "" : untrustedCert.getNotBefore().toString(),
       untrustedCert == null ? "" : untrustedCert.getNotAfter().toString(),
       sha1fingerprint,
-      sha256fingerprint,
-      pathToActualTrustStore.toString());
+      sha256fingerprint);
 
     return client.askSslCertificateConfirmation(confirmationParams).join();
   }

@@ -19,6 +19,12 @@
  */
 package org.sonarsource.sonarlint.ls.domain;
 
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 public enum LSLanguage {
   ABAP("ABAP", "abap"),
   APEX("Apex", "apex"),
@@ -61,6 +67,9 @@ public enum LSLanguage {
   private final String label;
   private final String key;
 
+  private static final Map<String, LSLanguage> byKey = Stream.of(values())
+    .collect(Collectors.toMap(LSLanguage::getKey, Function.identity()));
+
   LSLanguage(String label, String key) {
     this.label = label;
     this.key = key;
@@ -72,5 +81,9 @@ public enum LSLanguage {
 
   public String getKey() {
     return key;
+  }
+
+  public static Optional<LSLanguage> forKey(String key) {
+    return Optional.ofNullable(byKey.get(key));
   }
 }
