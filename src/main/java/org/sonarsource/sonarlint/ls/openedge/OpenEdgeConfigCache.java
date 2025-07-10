@@ -112,6 +112,7 @@ public class OpenEdgeConfigCache {
     props.put("sonar.oe.binary.cache1", opt.get().getProjectInfo().getRcodeCache());
     props.put("sonar.oe.binary.cache2", opt.get().getProjectInfo().getPropathRCodeCache());
     props.put("sonar.oe.lint.databases.kryo", opt.get().getProjectInfo().getSchemaCache());
+    props.put("sonar.oe.lint.xrefdirs", opt.get().getProjectInfo().getXrefDirs());
 
     return props;
   }
