@@ -31,6 +31,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -140,7 +141,7 @@ public abstract class AbstractLanguageServerMediumTests {
   private static ServerSocket serverSocket;
   protected static SonarLintExtendedLanguageServer lsProxy;
   protected static FakeLanguageClient client;
-  private static List<SonarLintExtendedLanguageClient.FoundFileDto> foundFileDtos = List.of();
+  private static Map<String, List<SonarLintExtendedLanguageClient.FoundFileDto>> foundFileDtosByFolderUri = new HashMap<>();
 
   @BeforeAll
   static void startServer() throws Exception {
@@ -275,8 +276,12 @@ public abstract class AbstractLanguageServerMediumTests {
     verifyConfigurationChangeOnClient();
   }
 
-  protected static void setUpFindFilesInFolderResponse(List<SonarLintExtendedLanguageClient.FoundFileDto> foundFileDtos) {
-    AbstractLanguageServerMediumTests.foundFileDtos = foundFileDtos;
+  protected static void clearFilesInFolder() {
+    foundFileDtosByFolderUri.clear();
+  }
+
+  protected static void setUpFindFilesInFolderResponse(String folderUri, List<SonarLintExtendedLanguageClient.FoundFileDto> foundFileDtos) {
+    foundFileDtosByFolderUri.put(folderUri, foundFileDtos);
   }
 
   protected void setupGlobalSettings(Map<String, Object> globalSettings) {
@@ -301,7 +306,8 @@ public abstract class AbstractLanguageServerMediumTests {
       lsProxy.getNotebookDocumentService().didClose(new DidCloseNotebookDocumentParams(new NotebookDocumentIdentifier(uri), List.of()));
     }
     foldersToRemove.forEach(folderUri -> lsProxy.getWorkspaceService().didChangeWorkspaceFolders(
-      new DidChangeWorkspaceFoldersParams(new WorkspaceFoldersChangeEvent(List.of(), List.of(new WorkspaceFolder(folderUri, Path.of(URI.create(folderUri)).getFileName().toString()))))));
+      new DidChangeWorkspaceFoldersParams(new WorkspaceFoldersChangeEvent(List.of(), List.of(new WorkspaceFolder(folderUri,
+        Path.of(URI.create(folderUri)).getFileName().toString()))))));
     instanceTempDirs.forEach(tempDirPath -> FileUtils.deleteQuietly(tempDirPath.toFile()));
     instanceTempDirs.clear();
   }
@@ -352,6 +358,7 @@ public abstract class AbstractLanguageServerMediumTests {
 
     Map<String, List<Diagnostic>> diagnostics = new ConcurrentHashMap<>();
     Map<String, List<Diagnostic>> taints = new ConcurrentHashMap<>();
+    Map<String, List<Diagnostic>> dependencyRisks = new ConcurrentHashMap<>();
     Map<String, List<Diagnostic>> hotspots = new ConcurrentHashMap<>();
     Queue<MessageParams> logs = new ConcurrentLinkedQueue<>();
     Map<String, Object> globalSettings = new HashMap<>();
@@ -363,10 +370,12 @@ public abstract class AbstractLanguageServerMediumTests {
     CountDownLatch settingsLatch = new CountDownLatch(0);
     CountDownLatch showRuleDescriptionLatch = new CountDownLatch(0);
     CountDownLatch suggestBindingLatch = new CountDownLatch(0);
+    CountDownLatch suggestConnectionLatch = new CountDownLatch(0);
     CountDownLatch readyForTestsLatch = new CountDownLatch(0);
     ShowAllLocationsCommand.Param showIssueParams;
     ShowFixSuggestionParams showFixSuggestionParams;
     SuggestBindingParams suggestedBindings;
+    SuggestConnectionParams suggestConnections;
     ShowRuleDescriptionParams ruleDesc;
     boolean isIgnoredByScm = false;
     boolean shouldAnalyseFile = true;
@@ -534,6 +543,10 @@ public abstract class AbstractLanguageServerMediumTests {
     }
 
     @Override
+    public void notifyInvalidToken(NotifyInvalidTokenParams params) {
+    }
+
+    @Override
     public void suggestBinding(SuggestBindingParams binding) {
       this.suggestedBindings = binding;
       suggestBindingLatch.countDown();
@@ -541,12 +554,13 @@ public abstract class AbstractLanguageServerMediumTests {
 
     @Override
     public void suggestConnection(SuggestConnectionParams suggestConnectionParams) {
-      throw new UnsupportedOperationException("Not implemented yet");
+      this.suggestConnections = suggestConnectionParams;
+      suggestConnectionLatch.countDown();
     }
 
     @Override
     public CompletableFuture<FindFileByNamesInScopeResponse> listFilesInFolder(FolderUriParams params) {
-      return CompletableFuture.completedFuture(new FindFileByNamesInScopeResponse(foundFileDtos));
+      return CompletableFuture.completedFuture(new FindFileByNamesInScopeResponse(foundFileDtosByFolderUri.getOrDefault(params.getFolderUri(), Collections.emptyList())));
     }
 
     @Override
@@ -675,6 +689,10 @@ public abstract class AbstractLanguageServerMediumTests {
       return CompletableFutures.computeAsync(server -> "token");
     }
 
+    @Override
+    public void publishDependencyRisks(PublishDiagnosticsParams publishDiagnosticsParams) {
+      this.dependencyRisks.put(publishDiagnosticsParams.getUri(), publishDiagnosticsParams.getDiagnostics());
+    }
   }
 
   protected static void notifyConfigurationChangeOnClient() {
@@ -840,7 +858,7 @@ public abstract class AbstractLanguageServerMediumTests {
   }
 
   protected static void awaitUntilAsserted(ThrowingRunnable assertion) {
-    await().atMost(2, MINUTES).untilAsserted(assertion);
+    await().atMost(1, MINUTES).untilAsserted(assertion);
   }
 
   protected Map<String, Object> getFolderSettings(String folderUri) {

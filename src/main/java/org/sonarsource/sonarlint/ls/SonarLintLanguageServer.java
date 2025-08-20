@@ -96,6 +96,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.CheckStatusCh
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.HotspotStatus;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.OpenHotspotInBrowserParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.AddIssueCommentParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyRiskStatusParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
@@ -104,6 +105,7 @@ import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.ConnectionCh
 import org.sonarsource.sonarlint.ls.backend.BackendInitParams;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.clientapi.SonarLintVSCodeClient;
+import org.sonarsource.sonarlint.ls.connected.DependencyRisksCache;
 import org.sonarsource.sonarlint.ls.connected.ProjectBindingManager;
 import org.sonarsource.sonarlint.ls.connected.TaintVulnerabilitiesCache;
 import org.sonarsource.sonarlint.ls.connected.api.HostInfoProvider;
@@ -156,6 +158,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   private final ProjectBindingManager bindingManager;
   private final ForcedAnalysisCoordinator forcedAnalysisCoordinator;
   private final TaintVulnerabilitiesCache taintVulnerabilitiesCache;
+  private final DependencyRisksCache dependencyRisksCache;
   private final OpenFilesCache openFilesCache;
   private final OpenNotebooksCache openNotebooksCache;
   private final CommandManager commandManager;
@@ -208,6 +211,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     this.issuesCache = new IssuesCache();
     this.securityHotspotsCache = new HotspotsCache();
     this.taintVulnerabilitiesCache = new TaintVulnerabilitiesCache();
+    this.dependencyRisksCache = new DependencyRisksCache();
     this.notebookDiagnosticPublisher = new NotebookDiagnosticPublisher(client, issuesCache);
     this.openNotebooksCache = new OpenNotebooksCache(lsLogOutput, notebookDiagnosticPublisher);
     this.notebookDiagnosticPublisher.setOpenNotebooksCache(openNotebooksCache);
@@ -215,12 +219,13 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     var skippedPluginsNotifier = new SkippedPluginsNotifier(client, lsLogOutput);
     this.promotionalNotifications = new PromotionalNotifications(client);
     var vsCodeClient = new SonarLintVSCodeClient(client, hostInfoProvider, lsLogOutput, taintVulnerabilitiesCache,
+      dependencyRisksCache,
       skippedPluginsNotifier, promotionalNotifications);
     this.backendServiceFacade = new BackendServiceFacade(vsCodeClient, lsLogOutput, client);
     vsCodeClient.setBackendServiceFacade(backendServiceFacade);
     this.workspaceFoldersManager = new WorkspaceFoldersManager(backendServiceFacade, lsLogOutput);
     this.diagnosticPublisher = new DiagnosticPublisher(client, taintVulnerabilitiesCache, issuesCache,
-      securityHotspotsCache, openNotebooksCache);
+      securityHotspotsCache, openNotebooksCache, dependencyRisksCache);
     vsCodeClient.setDiagnosticPublisher(diagnosticPublisher);
     this.settingsManager = new SettingsManager(this.client, this.workspaceFoldersManager, backendServiceFacade, lsLogOutput);
     vsCodeClient.setSettingsManager(settingsManager);
@@ -639,13 +644,18 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   public CompletableFuture<ConnectionCheckResult> checkConnection(ConnectionCheckParams params) {
     var connectionName = getConnectionNameFromConnectionCheckParams(params);
     lsLogOutput.debug(format("Received a validate connectionName request for %s", connectionName));
-    var validateConnectionParams = getValidateConnectionParams(params);
-    if (validateConnectionParams != null) {
-      return backendServiceFacade.getBackendService().validateConnection(validateConnectionParams)
-        .thenApply(validationResult -> validationResult.isSuccess() ? success(connectionName)
-          : failure(connectionName, validationResult.getMessage()));
+    try {
+      var validateConnectionParams = getValidateConnectionParams(params);
+      if (validateConnectionParams != null) {
+        return backendServiceFacade.getBackendService().validateConnection(validateConnectionParams)
+          .thenApply(validationResult -> validationResult.isSuccess() ? success(connectionName)
+            : failure(connectionName, validationResult.getMessage()));
+      }
+      return CompletableFuture.completedFuture(failure(connectionName, format("Connection '%s' is unknown", connectionName)));
+    } catch (IllegalStateException e) {
+      // Handle null/empty token validation errors
+      return CompletableFuture.completedFuture(failure(connectionName, "Invalid credentials: " + e.getMessage()));
     }
-    return CompletableFuture.completedFuture(failure(connectionName, format("Connection '%s' is unknown", connectionName)));
   }
 
   private ValidateConnectionParams getValidateConnectionParams(ConnectionCheckParams params) {
@@ -715,6 +725,19 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   }
 
   @Override
+  public void openDependencyRiskInBrowser(OpenDependencyRiskInBrowserParams params) {
+    var issueId = params.issueId();
+    var folderUri = params.folderUri();
+    backendServiceFacade.getBackendService().openDependencyRiskInBrowser(folderUri, issueId)
+      .exceptionally(ex -> {
+        var message = "Failed to open dependency risk in browser: " + ex.getMessage();
+        lsLogOutput.error(message);
+        client.showMessage(new MessageParams(MessageType.Error, message));
+        return null;
+      });
+  }
+
+  @Override
   public CompletableFuture<Void> showHotspotRuleDescription(ShowHotspotRuleDescriptionParams params) {
     var fileUri = params.fileUri;
     var showHotspotCommandParams = new ExecuteCommandParams(SONARLINT_SHOW_ISSUE_DETAILS_FROM_CODE_ACTION_COMMAND,
@@ -767,6 +790,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       return null;
     });
   }
+
 
   @Override
   public CompletableFuture<Void> scanFolderForHotspots(ScanFolderForHotspotsParams params) {
@@ -832,6 +856,12 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   }
 
   @Override
+  public CompletableFuture<Void> dependencyRiskIssueInvestigatedLocally() {
+    telemetry.dependencyRiskIssueInvestigatedLocally();
+    return CompletableFuture.completedFuture(null);
+  }
+
+  @Override
   public CompletableFuture<CheckIssueStatusChangePermittedResponse> checkIssueStatusChangePermitted(CheckIssueStatusChangePermittedParams params) {
     var bindingWrapperOpt = bindingManager.getBinding(create(params.getFolderUri()));
     if (bindingWrapperOpt.isEmpty()) {
@@ -862,6 +892,27 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       if (!StringUtils.isEmpty(params.getComment())) {
         addIssueComment(new AddIssueCommentParams(params.getConfigurationScopeId(), params.getIssueId(), params.getComment()));
       }
+    });
+  }
+
+  @Override
+  public void changeDependencyRiskStatus(ChangeDependencyRiskStatusParams params) {
+    backendServiceFacade.getBackendService().changeDependencyRiskStatus(params).thenAccept(
+      nothing -> client.showMessage(new MessageParams(MessageType.Info, "Dependency risk status was updated"))
+    ).exceptionally(t -> {
+        lsLogOutput.errorWithStackTrace("Error changing dependency risk status", t);
+        client.showMessage(new MessageParams(MessageType.Error, "Could not change status for the dependency risk. Check SonarQube for IDE output for details."));
+        return null;
+      }
+    );
+  }
+
+  @Override
+  public CompletableFuture<GetDependencyRiskTransitionsResponse> getDependencyRiskTransitions(GetDependencyRiskTransitionsParams params) {
+    return CompletableFutures.computeAsync(cancelToken -> {
+      cancelToken.checkCanceled();
+      var transitions = dependencyRisksCache.getAllowedTransitionsForDependencyRisk(params.dependencyRiskId().toString());
+      return new GetDependencyRiskTransitionsResponse(transitions);
     });
   }
 

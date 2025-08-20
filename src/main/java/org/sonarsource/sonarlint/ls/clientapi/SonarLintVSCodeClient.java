@@ -59,6 +59,7 @@ import org.sonarsource.sonarlint.core.rpc.client.SonarLintCancelChecker;
 import org.sonarsource.sonarlint.core.rpc.client.SonarLintRpcClientDelegate;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingSuggestionDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.HotspotStatus;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.tracking.DependencyRiskDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.tracking.TaintVulnerabilityDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.AssistBindingParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.AssistBindingResponse;
@@ -98,10 +99,12 @@ import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.CreateConnectionParams;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.commands.ShowAllLocationsCommand;
+import org.sonarsource.sonarlint.ls.connected.DependencyRisksCache;
 import org.sonarsource.sonarlint.ls.connected.ProjectBindingManager;
 import org.sonarsource.sonarlint.ls.connected.TaintVulnerabilitiesCache;
 import org.sonarsource.sonarlint.ls.connected.api.HostInfoProvider;
 import org.sonarsource.sonarlint.ls.connected.notifications.SmartNotifications;
+import org.sonarsource.sonarlint.ls.domain.DependencyRisk;
 import org.sonarsource.sonarlint.ls.domain.TaintIssue;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderBranchManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
@@ -131,6 +134,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   private BackendServiceFacade backendServiceFacade;
   private WorkspaceFolderBranchManager branchManager;
   private final TaintVulnerabilitiesCache taintVulnerabilitiesCache;
+  private final DependencyRisksCache dependencyRisksCache;
   private WorkspaceFoldersManager workspaceFoldersManager;
   private ForcedAnalysisCoordinator forcedAnalysisCoordinator;
   private DiagnosticPublisher diagnosticPublisher;
@@ -142,11 +146,13 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   private AnalysisHelper analysisHelper;
 
   public SonarLintVSCodeClient(SonarLintExtendedLanguageClient client, HostInfoProvider hostInfoProvider, LanguageClientLogger logOutput,
-    TaintVulnerabilitiesCache taintVulnerabilitiesCache, SkippedPluginsNotifier skippedPluginsNotifier, PromotionalNotifications promotionalNotifications) {
+    TaintVulnerabilitiesCache taintVulnerabilitiesCache, DependencyRisksCache dependencyRisksCache,
+    SkippedPluginsNotifier skippedPluginsNotifier, PromotionalNotifications promotionalNotifications) {
     this.client = client;
     this.hostInfoProvider = hostInfoProvider;
     this.logOutput = logOutput;
     this.taintVulnerabilitiesCache = taintVulnerabilitiesCache;
+    this.dependencyRisksCache = dependencyRisksCache;
     this.skippedPluginsNotifier = skippedPluginsNotifier;
     this.promotionalNotifications = promotionalNotifications;
     this.progressMonitor = new LSProgressMonitor(client);
@@ -328,6 +334,9 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
       return null;
     }
     var token = connectionSettings.getToken();
+    if (token == null || token.isBlank()) {
+      return null;
+    }
     return Either.forLeft(new TokenDto(token));
   }
 
@@ -395,6 +404,26 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   public void didChangeMatchedSonarProjectBranch(String configScopeId, String newMatchedBranchName) {
     client.setReferenceBranchNameForFolder(SonarLintExtendedLanguageClient.ReferenceBranchForFolder.of(configScopeId,
       newMatchedBranchName));
+  }
+
+  @Override
+  public void didChangeDependencyRisks(String configScopeId, Set<UUID> closedDependencyRiskIds, List<DependencyRiskDto> addedDependencyRisks,
+    List<DependencyRiskDto> updatedDependencyRisks) {
+    closedDependencyRiskIds.forEach(id -> dependencyRisksCache.removeDependencyRisk(configScopeId, id.toString()));
+
+    var folderUri = URI.create(configScopeId);
+    addedDependencyRisks.forEach(dependencyRiskDto -> {
+      var dependencyRisk = new DependencyRisk(dependencyRiskDto, configScopeId);
+      dependencyRisksCache.addDependencyRisk(folderUri, dependencyRisk);
+    });
+
+    updatedDependencyRisks.forEach(dependencyRiskDto -> {
+      var dependencyRisk = new DependencyRisk(dependencyRiskDto, configScopeId);
+      dependencyRisksCache.removeDependencyRisk(configScopeId, dependencyRisk.getId().toString());
+      dependencyRisksCache.addDependencyRisk(folderUri, dependencyRisk);
+    });
+
+    diagnosticPublisher.publishDependencyRisks(folderUri);
   }
 
   @Override
@@ -646,5 +675,10 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   @Override
   public Map<String, String> getInferredAnalysisProperties(String configurationScopeId, List<URI> filesToAnalyze) {
     return analysisHelper.getInferredAnalysisProperties(configurationScopeId, filesToAnalyze);
+  }
+
+  @Override
+  public void invalidToken(String connectionId) {
+    client.notifyInvalidToken(new SonarLintExtendedLanguageClient.NotifyInvalidTokenParams(connectionId));
   }
 }

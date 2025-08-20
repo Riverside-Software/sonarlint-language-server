@@ -929,6 +929,9 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
   @JsonNotification("sonarlint/publishTaintVulnerabilities")
   void publishTaintVulnerabilities(PublishDiagnosticsParams publishDiagnosticsParams);
 
+  @JsonNotification("sonarlint/publishDependencyRisks")
+  void publishDependencyRisks(PublishDiagnosticsParams publishDiagnosticsParams);
+
   @JsonNotification("sonarlint/readyForTests")
   void readyForTests();
 
@@ -937,7 +940,8 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
 
   record SslCertificateConfirmationParams(@Expose String issuedTo, @Expose String issuedBy, @Expose String validFrom,
                                           @Expose String validTo, @Expose String sha1Fingerprint,
-                                          @Expose String sha256Fingerprint) {}
+                                          @Expose String sha256Fingerprint) {
+  }
 
   @JsonRequest("sonarlint/askSslCertificateConfirmation")
   CompletableFuture<Boolean> askSslCertificateConfirmation(SslCertificateConfirmationParams params);
@@ -1018,4 +1022,10 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
 
   @JsonNotification("sonarlint/submitNewCodeDefinition")
   void submitNewCodeDefinition(SubmitNewCodeDefinitionParams params);
+
+  record NotifyInvalidTokenParams(String connectionId) {
+  }
+
+  @JsonNotification("sonarlint/notifyInvalidToken")
+  void notifyInvalidToken(NotifyInvalidTokenParams params);
 }

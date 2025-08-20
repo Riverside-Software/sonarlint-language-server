@@ -21,6 +21,7 @@ package org.sonarsource.sonarlint.ls;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 import javax.annotation.CheckForNull;
@@ -38,6 +39,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetSharedConn
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.GetConnectionSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.auth.HelpGenerateUserTokenResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.org.OrganizationDto;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyRiskStatusParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
@@ -350,6 +352,15 @@ public interface SonarLintExtendedLanguageServer extends LanguageServer {
   @JsonNotification("sonarlint/openHotspotInBrowser")
   void openHotspotInBrowser(OpenHotspotInBrowserLsParams params);
 
+  @JsonNotification("sonarlint/openDependencyRiskInBrowser")
+  void openDependencyRiskInBrowser(OpenDependencyRiskInBrowserParams params);
+
+  record OpenDependencyRiskInBrowserParams(UUID issueId, String folderUri) {
+  }
+
+  @JsonNotification("sonarlint/dependencyRiskIssueInvestigatedLocally")
+  CompletableFuture<Void> dependencyRiskIssueInvestigatedLocally();
+
   class ShowHotspotRuleDescriptionParams {
     String hotspotId;
     String fileUri;
@@ -535,6 +546,18 @@ public interface SonarLintExtendedLanguageServer extends LanguageServer {
 
   @JsonNotification("sonarlint/changeIssueStatus")
   CompletableFuture<Void> changeIssueStatus(ChangeIssueStatusParams params);
+
+  @JsonNotification("sonarlint/changeDependencyRiskStatus")
+  void changeDependencyRiskStatus(ChangeDependencyRiskStatusParams params);
+
+  @JsonRequest("sonarlint/getDependencyRiskTransitions")
+  CompletableFuture<GetDependencyRiskTransitionsResponse> getDependencyRiskTransitions(GetDependencyRiskTransitionsParams params);
+
+  record GetDependencyRiskTransitionsParams(UUID dependencyRiskId) {
+  }
+
+  record GetDependencyRiskTransitionsResponse(List<String> transitions) {
+  }
 
   class CheckLocalDetectionSupportedResponse {
     boolean isSupported;
