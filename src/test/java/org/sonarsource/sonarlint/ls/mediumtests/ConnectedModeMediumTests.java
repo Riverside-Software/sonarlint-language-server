@@ -138,6 +138,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   @BeforeEach
   void mockSonarQube() {
     mockWebServerExtension.addStringResponse("/api/system/status", "{\"status\": \"UP\", \"version\": \"10.7\", \"id\": \"xzy\"}");
+    mockWebServerExtension.addProtobufResponse("/api/settings/values.protobuf", Settings.Values.newBuilder().build());
     mockWebServerExtension.addResponse("/api/authentication/validate?format=json", new MockResponse().setResponseCode(200));
     mockWebServerExtension.addResponse("/api/developers/search_events?projects=&from=", new MockResponse().setResponseCode(200));
     mockWebServerExtension.addProtobufResponse("/api/components/search.protobuf?qualifiers=TRK&ps=500&p=1",
@@ -301,7 +302,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
         Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "sonarqube", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
+        tuple(0, 13, 0, 26, PYTHON_S1313, "local-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
           DiagnosticSeverity.Information)));
   }
 
@@ -369,7 +370,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
         Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "remote", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
+        tuple(0, 13, 0, 26, PYTHON_S1313, "remote-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
           DiagnosticSeverity.Information)));
   }
 
@@ -447,7 +448,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
         Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "remote", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
+        tuple(0, 13, 0, 26, PYTHON_S1313, "remote-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
           DiagnosticSeverity.Information)));
   }
 
@@ -499,7 +500,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
         .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
           Diagnostic::getSeverity)
         .containsExactly(
-          tuple(1, 15, 1, 28, PYTHON_S1313, "sonarqube", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
+          tuple(1, 15, 1, 28, PYTHON_S1313, "local-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
             DiagnosticSeverity.Information));
       assertThat(client.getDiagnostics(uri1InFolder)).isEmpty();
 
@@ -507,7 +508,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
         .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
           Diagnostic::getSeverity)
         .containsExactly(
-          tuple(1, 15, 1, 28, PYTHON_S1313, "sonarqube", "Make sure using this hardcoded IP address \"23.45.67.89\" is safe here.",
+          tuple(1, 15, 1, 28, PYTHON_S1313, "local-hotspot", "Make sure using this hardcoded IP address \"23.45.67.89\" is safe here.",
             DiagnosticSeverity.Information));
       assertThat(client.getDiagnostics(uri2InFolder)).isEmpty();
     });
@@ -525,7 +526,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
         .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
           Diagnostic::getSeverity)
         .containsExactly(
-          tuple(1, 15, 1, 28, PYTHON_S1313, "sonarqube", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
+          tuple(1, 15, 1, 28, PYTHON_S1313, "local-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.",
             DiagnosticSeverity.Information));
 
       // File 2 is not open, cleaning hotspots
@@ -972,7 +973,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> assertThat(client.getHotspots(uriInFolder))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "remote", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
+        tuple(0, 13, 0, 26, PYTHON_S1313, "remote-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
     assertThat(client.getHotspots(uriInFolder).get(0).getData().toString()).contains("\"status\":0");
 
     lsProxy.changeHotspotStatus(new SonarLintExtendedLanguageServer.ChangeHotspotStatusParams(hotspotKey, HotspotStatus.SAFE.name(), uriInFolder));
@@ -1054,7 +1055,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> assertThat(client.getHotspots(uriInFolder))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "remote", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
+        tuple(0, 13, 0, 26, PYTHON_S1313, "remote-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
     assertThat(client.getHotspots(uriInFolder).get(0).getData().toString()).contains("\"status\":0");
 
     lsProxy.changeHotspotStatus(new SonarLintExtendedLanguageServer.ChangeHotspotStatusParams(hotspotKey, HotspotStatus.SAFE.name(), uriInFolder));
@@ -1148,7 +1149,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> assertThat(client.getHotspots(uriInFolder))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "remote", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
+        tuple(0, 13, 0, 26, PYTHON_S1313, "remote-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
 
 
     var response = lsProxy.getAllowedHotspotStatuses(
@@ -1174,7 +1175,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> assertThat(client.getHotspots(uriInFolder))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 13, 0, 26, PYTHON_S1313, "sonarqube", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
+        tuple(0, 13, 0, 26, PYTHON_S1313, "local-hotspot", "Make sure using this hardcoded IP address \"12.34.56.78\" is safe here.", DiagnosticSeverity.Information)));
 
     lsProxy.getAllowedHotspotStatuses(
       new SonarLintExtendedLanguageServer.GetAllowedHotspotStatusesParams(hotspotKey, folder1BaseDir.toUri().toString(), uriInFolder)).get();
