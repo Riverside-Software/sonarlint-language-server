@@ -19,7 +19,19 @@
  */
 package org.sonarsource.sonarlint.ls.mediumtests;
 
-import com.google.gson.JsonNull;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.sonarsource.sonarlint.ls.SonarLintLanguageServer.JUPYTER_NOTEBOOK_TYPE;
+import static org.sonarsource.sonarlint.ls.settings.SettingsManager.DOTNET_DEFAULT_SOLUTION_PATH;
+import static org.sonarsource.sonarlint.ls.settings.SettingsManager.OMNISHARP_LOAD_PROJECT_ON_DEMAND;
+import static org.sonarsource.sonarlint.ls.settings.SettingsManager.OMNISHARP_PROJECT_LOAD_TIMEOUT;
+import static org.sonarsource.sonarlint.ls.settings.SettingsManager.OMNISHARP_USE_MODERN_NET;
+import static org.sonarsource.sonarlint.ls.settings.SettingsManager.SONARLINT_CONFIGURATION_NAMESPACE;
+import static org.sonarsource.sonarlint.ls.settings.SettingsManager.VSCODE_FILE_EXCLUDES;
+
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -50,7 +62,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
 import javax.annotation.Nullable;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.assertj.core.api.iterable.ThrowingExtractor;
@@ -104,26 +118,14 @@ import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.SuggestConn
 import org.sonarsource.sonarlint.ls.ServerMain;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageServer;
-import org.sonarsource.sonarlint.ls.SonarLintLanguageServer;
 import org.sonarsource.sonarlint.ls.commands.ShowAllLocationsCommand;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.telemetry.SonarLintTelemetry;
+
+import com.google.gson.JsonNull;
+
 import picocli.CommandLine;
 import testutils.LogTestStartAndEnd;
-
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
-import static org.sonarsource.sonarlint.ls.SonarLintLanguageServer.JUPYTER_NOTEBOOK_TYPE;
-import static org.sonarsource.sonarlint.ls.settings.SettingsManager.DOTNET_DEFAULT_SOLUTION_PATH;
-import static org.sonarsource.sonarlint.ls.settings.SettingsManager.OMNISHARP_LOAD_PROJECT_ON_DEMAND;
-import static org.sonarsource.sonarlint.ls.settings.SettingsManager.OMNISHARP_PROJECT_LOAD_TIMEOUT;
-import static org.sonarsource.sonarlint.ls.settings.SettingsManager.OMNISHARP_USE_MODERN_NET;
-import static org.sonarsource.sonarlint.ls.settings.SettingsManager.SONARLINT_CONFIGURATION_NAMESPACE;
-import static org.sonarsource.sonarlint.ls.settings.SettingsManager.VSCODE_FILE_EXCLUDES;
 
 @ExtendWith(LogTestStartAndEnd.class)
 public abstract class AbstractLanguageServerMediumTests {
@@ -137,7 +139,7 @@ public abstract class AbstractLanguageServerMediumTests {
   Path temp;
   protected Set<String> toBeClosed = new HashSet<>();
   protected Set<String> notebooksToBeClosed = new HashSet<>();
-  protected Set<String> foldersToRemove = new HashSet<>();
+  private final Set<String> foldersToRemove = new HashSet<>();
   private static ServerSocket serverSocket;
   protected static SonarLintExtendedLanguageServer lsProxy;
   protected static FakeLanguageClient client;
@@ -209,17 +211,28 @@ public abstract class AbstractLanguageServerMediumTests {
   }
 
   protected static void initialize(Map<String, Object> initializeOptions, WorkspaceFolder... initFolders) throws InterruptedException, ExecutionException {
-    var initializeParams = getInitializeParams(initializeOptions, initFolders);
+    var defaultInitializeOptions = Map.of(
+      "rules", List.of(),
+      "connections", Map.of(
+        "sonarqube", List.of(),
+        "sonarcloud", List.of()),
+      "automaticAnalysis", true);
+    var actualInitializeOptions = new HashMap<>(defaultInitializeOptions);
+    actualInitializeOptions.putAll(initializeOptions);
+    var initializeParams = getInitializeParams(actualInitializeOptions, initFolders);
     initializeParams.getCapabilities().setWindow(new WindowClientCapabilities());
     var initializeResult = lsProxy.initialize(initializeParams).get();
     assertThat(initializeResult.getServerInfo().getName()).isEqualTo("SonarLint Language Server");
     assertThat(initializeResult.getServerInfo().getVersion()).isNotBlank();
-    if (SonarLintLanguageServer.isEnableNotebooks(initializeOptions)) {
+    if (Boolean.TRUE.equals(actualInitializeOptions.get("enableNotebooks"))) {
       assertThat(initializeResult.getCapabilities().getNotebookDocumentSync()).isNotNull();
     } else {
       assertThat(initializeResult.getCapabilities().getNotebookDocumentSync()).isNull();
     }
+    client.settingsAppliedLatch = new CountDownLatch(1);
+    // this triggers a didChangeConfiguration, in turns fetching configuration from the client
     lsProxy.initialized(new InitializedParams());
+    awaitLatch(client.settingsAppliedLatch);
   }
 
   @NotNull
@@ -273,7 +286,6 @@ public abstract class AbstractLanguageServerMediumTests {
     setUpFolderSettings(client.folderSettings);
 
     notifyConfigurationChangeOnClient();
-    verifyConfigurationChangeOnClient();
   }
 
   protected static void clearFilesInFolder() {
@@ -292,8 +304,13 @@ public abstract class AbstractLanguageServerMediumTests {
     // do nothing by default
   }
 
-  protected void verifyConfigurationChangeOnClient() {
-    // do nothing by default
+  protected void addFolder(String uri, String name) {
+    client.settingsAppliedLatch = new CountDownLatch(1);
+    var workspaceFolder = new WorkspaceFolder(uri, name);
+    lsProxy.getWorkspaceService().didChangeWorkspaceFolders(new DidChangeWorkspaceFoldersParams(
+      new WorkspaceFoldersChangeEvent(List.of(workspaceFolder), Collections.emptyList())));
+    awaitLatch(client.settingsAppliedLatch);
+    foldersToRemove.add(uri);
   }
 
   @AfterEach
@@ -367,11 +384,10 @@ public abstract class AbstractLanguageServerMediumTests {
     Map<String, GetOpenEdgeConfigResponse> oeConfigs = new HashMap<>();
     Map<String, String> referenceBranchNameByFolder = new HashMap<>();
     Map<String, Boolean> scopeReadyForAnalysis = new HashMap<>();
-    CountDownLatch settingsLatch = new CountDownLatch(0);
+    CountDownLatch settingsAppliedLatch = new CountDownLatch(0);
     CountDownLatch showRuleDescriptionLatch = new CountDownLatch(0);
     CountDownLatch suggestBindingLatch = new CountDownLatch(0);
     CountDownLatch suggestConnectionLatch = new CountDownLatch(0);
-    CountDownLatch readyForTestsLatch = new CountDownLatch(0);
     ShowAllLocationsCommand.Param showIssueParams;
     ShowFixSuggestionParams showFixSuggestionParams;
     SuggestBindingParams suggestedBindings;
@@ -399,10 +415,9 @@ public abstract class AbstractLanguageServerMediumTests {
       globalSettings = new HashMap<>();
       setDisableTelemetry(globalSettings, true);
       folderSettings.clear();
-      settingsLatch = new CountDownLatch(0);
+      settingsAppliedLatch = new CountDownLatch(0);
       showRuleDescriptionLatch = new CountDownLatch(0);
       suggestBindingLatch = new CountDownLatch(0);
-      readyForTestsLatch = new CountDownLatch(0);
       needCompilationDatabaseCalls.set(0);
       shouldAnalyseFile = true;
       scopeReadyForAnalysis.clear();
@@ -491,35 +506,31 @@ public abstract class AbstractLanguageServerMediumTests {
     public CompletableFuture<List<Object>> configuration(ConfigurationParams configurationParams) {
       return CompletableFutures.computeAsync(cancelToken -> {
         List<Object> result;
-        try {
-          assertThat(configurationParams.getItems()).extracting(ConfigurationItem::getSection).containsExactly(SONARLINT_CONFIGURATION_NAMESPACE,
-            DOTNET_DEFAULT_SOLUTION_PATH, OMNISHARP_USE_MODERN_NET, OMNISHARP_LOAD_PROJECT_ON_DEMAND, OMNISHARP_PROJECT_LOAD_TIMEOUT, VSCODE_FILE_EXCLUDES);
-          result = new ArrayList<>(configurationParams.getItems().size());
-          for (var item : configurationParams.getItems()) {
-            if (item.getScopeUri() == null) {
-              if (item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
-                result.add(globalSettings);
-              } else {
-                result.add(JsonNull.INSTANCE);
-              }
-            } else if (item.getScopeUri() != null && !item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
-              result
-                .add(Optional.ofNullable(folderSettings.get(item.getScopeUri()))
-                  .orElseThrow(() -> new IllegalStateException("No settings mocked for workspaceFolderPath " + item.getScopeUri())));
-              // we don't want to repeat the same setting for one folder 5 times :)
-              break;
+        assertThat(configurationParams.getItems()).extracting(ConfigurationItem::getSection).containsExactly(SONARLINT_CONFIGURATION_NAMESPACE,
+          DOTNET_DEFAULT_SOLUTION_PATH, OMNISHARP_USE_MODERN_NET, OMNISHARP_LOAD_PROJECT_ON_DEMAND, OMNISHARP_PROJECT_LOAD_TIMEOUT, VSCODE_FILE_EXCLUDES);
+        result = new ArrayList<>(configurationParams.getItems().size());
+        for (var item : configurationParams.getItems()) {
+          if (item.getScopeUri() == null) {
+            if (item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
+              result.add(globalSettings);
+            } else {
+              result.add(JsonNull.INSTANCE);
             }
+          } else if (item.getScopeUri() != null && !item.getSection().equals(SONARLINT_CONFIGURATION_NAMESPACE)) {
+            result
+              .add(Optional.ofNullable(folderSettings.get(item.getScopeUri()))
+                .orElseThrow(() -> new IllegalStateException("No settings mocked for workspaceFolderPath " + item.getScopeUri())));
+            // we don't want to repeat the same setting for one folder 5 times :)
+            break;
           }
-        } finally {
-          settingsLatch.countDown();
         }
         return result;
       });
     }
 
     @Override
-    public void readyForTests() {
-      readyForTestsLatch.countDown();
+    public void settingsApplied() {
+      settingsAppliedLatch.countDown();
     }
 
     @Override
@@ -696,15 +707,9 @@ public abstract class AbstractLanguageServerMediumTests {
   }
 
   protected static void notifyConfigurationChangeOnClient() {
-    client.settingsLatch = new CountDownLatch(1);
+    client.settingsAppliedLatch = new CountDownLatch(1);
     lsProxy.getWorkspaceService().didChangeConfiguration(new DidChangeConfigurationParams(Map.of("sonarlint", client.globalSettings)));
-    awaitLatch(client.settingsLatch);
-    // workspace/configuration has been called by server, but give some time for the response to be processed (settings change listeners)
-    try {
-      Thread.sleep(200);
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    }
+    awaitLatch(client.settingsAppliedLatch);
   }
 
   protected static void setTestFilePattern(Map<String, Object> config, @Nullable String testFilePattern) {
@@ -850,7 +855,7 @@ public abstract class AbstractLanguageServerMediumTests {
   }
 
   protected static void awaitUntilAsserted(ThrowingRunnable assertion) {
-    await().atMost(1, MINUTES).untilAsserted(assertion);
+    await().atMost(15, SECONDS).untilAsserted(assertion);
   }
 
   protected Map<String, Object> getFolderSettings(String folderUri) {

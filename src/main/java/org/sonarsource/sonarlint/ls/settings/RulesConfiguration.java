@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 import javax.annotation.CheckForNull;
 import org.sonar.api.rule.RuleKey;
 
-class RulesConfiguration {
+public class RulesConfiguration {
 
   private static final String LEVEL_ON = "on";
 
@@ -39,7 +39,7 @@ class RulesConfiguration {
     this.rules = rules;
   }
 
-  static RulesConfiguration parse(Map<String, Object> rulesSettings) {
+  public static RulesConfiguration parse(Map<String, Object> rulesSettings) {
     return new RulesConfiguration(rulesSettings.entrySet().stream()
       .map(ConfiguredRule::new)
       .filter(r -> r.key != null)
@@ -72,7 +72,7 @@ class RulesConfiguration {
       if (ruleJson.getValue() instanceof Map) {
         var config = (Map<String, Object>) ruleJson.getValue();
         this.level = safeParseLevel(config);
-        this.parameters = safeParseParameters(config);
+        this.parameters = safeParseParameters(config.get("parameters"));
       } else {
         level = null;
         parameters = Collections.emptyMap();
@@ -94,9 +94,8 @@ class RulesConfiguration {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, String> safeParseParameters(Map<String, Object> config) {
-      Object parametersValue = config.get("parameters");
-      Map<String, Object> parameters = parametersValue instanceof Map ? (Map<String, Object>) parametersValue : Collections.emptyMap();
+    private static Map<String, String> safeParseParameters(Object params) {
+      Map<String, Object> parameters = params instanceof Map ? (Map<String, Object>) params : Collections.emptyMap();
       return parameters.entrySet().stream()
         .filter(e -> e.getValue() != null)
         .map(e -> new AbstractMap.SimpleImmutableEntry<>(e.getKey(), safeStringValue(e.getValue())))

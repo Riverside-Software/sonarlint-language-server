@@ -29,9 +29,7 @@ import java.time.Duration;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -45,6 +43,8 @@ import org.sonarsource.sonarlint.core.rpc.impl.BackendJsonRpcLauncher;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingConfigurationDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.scope.ConfigurationScopeDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.scope.DidAddConfigurationScopesParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.config.SonarCloudConnectionConfigurationDto;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.config.SonarQubeConnectionConfigurationDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.BackendCapability;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.ClientConstantInfoDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.HttpConfigurationDto;
@@ -57,42 +57,28 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.SonarQubeC
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.SslConfigurationDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.TelemetryClientConstantAttributesDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
+import org.sonarsource.sonarlint.ls.EnabledLanguages;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
+import org.sonarsource.sonarlint.ls.SonarLintLanguageServerInitializationOptions;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
-import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
+import org.sonarsource.sonarlint.ls.settings.RulesConfiguration;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.telemetry.SonarLintTelemetry;
-import org.sonarsource.sonarlint.ls.telemetry.TelemetryInitParams;
 
 public class BackendServiceFacade {
 
   public static final String MONITORING_DISABLED_PROPERTY_KEY = "sonarlint.monitoring.disabled";
 
-  private static final int DEFAULT_INIT_TIMEOUT_SECONDS = 60;
-
-  private final int initTimeoutSeconds;
   private final BackendService backendService;
-  private final BackendInitParams initParams;
   private final ConfigurationScopeDto rootConfigurationScope;
   private final ClientJsonRpcLauncher clientLauncher;
   private final LanguageClientLogger lsLogOutput;
-  private SettingsManager settingsManager;
-  private TelemetryInitParams telemetryInitParams;
+  private final EnabledLanguages enabledLanguages;
   private SonarLintTelemetry telemetry;
-  private final CountDownLatch initLatch = new CountDownLatch(1);
 
-
-  private String omnisharpDirectory;
-  private String csharpOssPath;
-  private String csharpEnterprisePath;
-
-  public BackendServiceFacade(SonarLintRpcClientDelegate rpcClient, LanguageClientLogger lsLogOutput, SonarLintExtendedLanguageClient client) {
-    this(rpcClient, lsLogOutput, client, DEFAULT_INIT_TIMEOUT_SECONDS);
-  }
-
-  BackendServiceFacade(SonarLintRpcClientDelegate rpcClient, LanguageClientLogger lsLogOutput, SonarLintExtendedLanguageClient client, int initTimeoutSeconds) {
-    this.initTimeoutSeconds = initTimeoutSeconds;
+  public BackendServiceFacade(SonarLintRpcClientDelegate rpcClient, LanguageClientLogger lsLogOutput, SonarLintExtendedLanguageClient client, EnabledLanguages enabledLanguages) {
     this.lsLogOutput = lsLogOutput;
+    this.enabledLanguages = enabledLanguages;
     var clientToServerOutputStream = new PipedOutputStream();
     try {
       var clientToServerInputStream = new PipedInputStream(clientToServerOutputStream);
@@ -105,92 +91,59 @@ public class BackendServiceFacade {
       throw new IllegalStateException(e);
     }
 
-    this.initParams = new BackendInitParams();
     this.rootConfigurationScope = new ConfigurationScopeDto(BackendService.ROOT_CONFIGURATION_SCOPE, null, false, BackendService.ROOT_CONFIGURATION_SCOPE,
-      new BindingConfigurationDto(null, null, false)
-    );
+      new BindingConfigurationDto(null, null, false));
   }
 
   public BackendService getBackendService() {
-    try {
-      var initialized = initLatch.await(initTimeoutSeconds, TimeUnit.SECONDS);
-      if (initialized) {
-        return backendService;
-      } else {
-        throw new IllegalStateException("Backend service not initialized in time");
-      }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("Interrupted", e);
-    }
+    return backendService;
   }
 
-  public void setSettingsManager(SettingsManager settingsManager) {
-    this.settingsManager = settingsManager;
-  }
-
-  public void setOmnisharpDirectory(String omnisharpDirectory) {
-    this.omnisharpDirectory = omnisharpDirectory;
-  }
-
-  public void setCsharpOssPath(String csharpOssPath) {
-    this.csharpOssPath = csharpOssPath;
-  }
-
-  public void setCsharpEnterprisePath(String csharpEnterprisePath) {
-    this.csharpEnterprisePath = csharpEnterprisePath;
-  }
-
-  public BackendInitParams getInitParams() {
-    return initParams;
-  }
-
-  private void initOnce(Map<String, ServerConnectionSettings> connections) {
-    if (initLatch.getCount() != 0) {
-      var sqConnections = BackendService.extractSonarQubeConnections(connections);
-      var scConnections = BackendService.extractSonarCloudConnections(connections);
-      initParams.setSonarQubeConnections(sqConnections);
-      initParams.setSonarCloudConnections(scConnections);
-      initParams.setStandaloneRuleConfigByKey(settingsManager.getStandaloneRuleConfigByKey());
-      initParams.setFocusOnNewCode(settingsManager.getCurrentSettings().isFocusOnNewCode());
-      backendService.initialize(toInitParams(initParams));
-      backendService.addConfigurationScopes(new DidAddConfigurationScopesParams(List.of(rootConfigurationScope)));
-      initLatch.countDown();
-    }
-  }
-
-  private InitializeParams toInitParams(BackendInitParams initParams) {
+  private InitializeParams toInitParams(SonarLintLanguageServerInitializationOptions initializationOptions, String appName, String clientVersion,
+    List<SonarQubeConnectionConfigurationDto> sonarQubeServerConnections, List<SonarCloudConnectionConfigurationDto> sonarQubeCloudConnections) {
+    var ideVersion = appName + " " + clientVersion;
+    var productVersion = initializationOptions.productVersion();
+    var userAgent = "SonarQube for IDE (SonarLint) - Visual Studio Code " + productVersion + " - " + clientVersion;
     var backendCapabilities = getBackendCapabilities();
-    var clientNodeJsPath = StringUtils.isEmpty(initParams.getClientNodePath()) ? null : Path.of(initParams.getClientNodePath());
-    var eslintBridgeServerBundlePath = StringUtils.isEmpty(initParams.getEslintBridgeServerPath()) ? null : Path.of(initParams.getEslintBridgeServerPath());
-    var languageSpecificRequirements = getLanguageSpecificRequirements(clientNodeJsPath, eslintBridgeServerBundlePath);
-    var sonarLintUserHomePath = initParams.getSonarlintUserHome() == null ? null : Path.of(initParams.getSonarlintUserHome());
+    var clientNodeJsPath = StringUtils.isBlank(initializationOptions.clientNodePath()) ? null : Path.of(initializationOptions.clientNodePath());
+    var eslintBridgeServerBundlePath = StringUtils.isBlank(initializationOptions.eslintBridgeServerPath()) ? null : Path.of(initializationOptions.eslintBridgeServerPath());
+    var languageSpecificRequirements = getLanguageSpecificRequirements(initializationOptions, clientNodeJsPath, eslintBridgeServerBundlePath);
+    var standaloneRulesConfiguration = RulesConfiguration.parse(initializationOptions.rules());
+    var standaloneRuleConfigByKey = SettingsManager.getStandaloneRuleConfigByKey(standaloneRulesConfiguration);
+    var overriddenUserHome = SettingsManager.getSonarLintUserHomeOverride();
+    Path storageRoot = null;
+    String sonarLintUserHome = null;
+    Path workDir = null;
+    if (overriddenUserHome != null) {
+      storageRoot = overriddenUserHome.resolve("storage");
+      sonarLintUserHome = overriddenUserHome.toString();
+      workDir = Path.of(sonarLintUserHome);
+    }
     return new InitializeParams(
-      new ClientConstantInfoDto("Visual Studio Code", initParams.getUserAgent()),
-      new TelemetryClientConstantAttributesDto(initParams.getTelemetryProductKey(),
-        telemetryInitParams.productName(),
-        telemetryInitParams.productVersion(),
-        telemetryInitParams.ideVersion(),
-        telemetryInitParams.additionalAttributes()),
+      new ClientConstantInfoDto("Visual Studio Code", userAgent),
+      new TelemetryClientConstantAttributesDto(initializationOptions.productKey(),
+        initializationOptions.productName(),
+        initializationOptions.productVersion(),
+        ideVersion,
+        initializationOptions.additionalAttributes()),
       getHttpConfiguration(),
       getSonarCloudAlternativeEnvironment(),
       backendCapabilities,
-      initParams.getStorageRoot(),
-      sonarLintUserHomePath,
-      initParams.getEmbeddedPluginPaths(),
-      initParams.getConnectedModeEmbeddedPluginPathsByKey(),
-      initParams.getEnabledLanguagesInStandaloneMode(),
-      initParams.getExtraEnabledLanguagesInConnectedMode(),
+      storageRoot,
+      workDir,
+      enabledLanguages.getEmbeddedPluginsPaths(),
+      enabledLanguages.getConnectedModeEmbeddedPluginPathsByKey(),
+      EnabledLanguages.getStandaloneLanguages(),
+      EnabledLanguages.getConnectedLanguages(),
       null,
-      initParams.getSonarQubeConnections(),
-      initParams.getSonarCloudConnections(),
-      initParams.getSonarlintUserHome(),
-      initParams.getStandaloneRuleConfigByKey(),
-      initParams.isFocusOnNewCode(),
+      sonarQubeServerConnections,
+      sonarQubeCloudConnections,
+      sonarLintUserHome,
+      standaloneRuleConfigByKey,
+      initializationOptions.focusOnNewCode(),
       languageSpecificRequirements,
-      true,
-      null
-    );
+      initializationOptions.automaticAnalysis(),
+      null);
   }
 
   @NotNull
@@ -217,17 +170,18 @@ public class BackendServiceFacade {
   }
 
   @NotNull
-  private LanguageSpecificRequirements getLanguageSpecificRequirements(@Nullable Path clientNodeJsPath, @Nullable Path eslintBridgeSeverPath) {
+  private static LanguageSpecificRequirements getLanguageSpecificRequirements(SonarLintLanguageServerInitializationOptions initializationOptions, @Nullable Path clientNodeJsPath,
+    @Nullable Path eslintBridgeSeverPath) {
     return new LanguageSpecificRequirements(
       new JsTsRequirementsDto(clientNodeJsPath, eslintBridgeSeverPath),
-      getOmnisharpRequirements()
-    );
+      getOmnisharpRequirements(initializationOptions));
   }
 
   @CheckForNull
-  private OmnisharpRequirementsDto getOmnisharpRequirements() {
-    var pathToOssCsharp = csharpOssPath == null ? null : Path.of(csharpOssPath);
-    var pathToEnterpriseCsharp = csharpEnterprisePath == null ? null : Path.of(csharpEnterprisePath);
+  private static OmnisharpRequirementsDto getOmnisharpRequirements(SonarLintLanguageServerInitializationOptions initializationOptions) {
+    var pathToOssCsharp = initializationOptions.csharpOssPath() == null ? null : Path.of(initializationOptions.csharpOssPath());
+    var pathToEnterpriseCsharp = initializationOptions.csharpEnterprisePath() == null ? null : Path.of(initializationOptions.csharpEnterprisePath());
+    var omnisharpDirectory = initializationOptions.omnisharpDirectory();
     if (omnisharpDirectory == null || pathToOssCsharp == null || pathToEnterpriseCsharp == null) {
       return null;
     }
@@ -303,23 +257,14 @@ public class BackendServiceFacade {
     }
   }
 
-  public void initialize(Map<String, ServerConnectionSettings> serverConnections) {
-    initOnce(serverConnections);
-  }
-
-  public void setTelemetryInitParams(TelemetryInitParams telemetryInitParams) {
-    this.telemetryInitParams = telemetryInitParams;
-  }
-
-  public TelemetryInitParams getTelemetryInitParams() {
-    return telemetryInitParams;
+  public void initialize(SonarLintLanguageServerInitializationOptions initializationOptions, String appName, String clientVersion,
+    List<SonarQubeConnectionConfigurationDto> sonarQubeServerConnections, List<SonarCloudConnectionConfigurationDto> sonarQubeCloudConnections) {
+    backendService.initialize(toInitParams(initializationOptions, appName, clientVersion, sonarQubeServerConnections, sonarQubeCloudConnections));
+    backendService.addConfigurationScopes(new DidAddConfigurationScopesParams(List.of(rootConfigurationScope)));
   }
 
   public void setTelemetry(SonarLintTelemetry telemetry) {
     this.telemetry = telemetry;
   }
 
-  public CountDownLatch getInitLatch() {
-    return initLatch;
-  }
 }

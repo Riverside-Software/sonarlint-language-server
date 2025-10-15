@@ -96,6 +96,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
   private static final String PATH_TO_NODE_EXECUTABLE = "pathToNodeExecutable";
   private static final String PATH_TO_COMPILE_COMMANDS = "pathToCompileCommands";
   private static final String FOCUS_ON_NEW_CODE = "focusOnNewCode";
+  private static final String AUTOMATIC_ANALYSIS = "automaticAnalysis";
 
   private static final String WORKSPACE_FOLDER_VARIABLE = "${workspaceFolder}";
 
@@ -159,6 +160,21 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     return standaloneRuleConfigByKey;
   }
 
+  public static Map<String, StandaloneRuleConfigDto> getStandaloneRuleConfigByKey(RulesConfiguration initialRulesConfiguration) {
+    var standaloneRuleConfigByKey = new HashMap<String, StandaloneRuleConfigDto>();
+    initialRulesConfiguration.includedRules().forEach((ruleKey -> {
+      var ruleParams = initialRulesConfiguration.ruleParameters().get(ruleKey);
+      var sanitizedParams = ruleParams != null ? ruleParams : Map.<String, String>of();
+      standaloneRuleConfigByKey.put(ruleKey.toString(), new StandaloneRuleConfigDto(true, sanitizedParams));
+    }));
+    initialRulesConfiguration.excludedRules().forEach((ruleKey -> {
+      var ruleParams = initialRulesConfiguration.ruleParameters().get(ruleKey);
+      var sanitizedParams = ruleParams != null ? ruleParams : Map.<String, String>of();
+      standaloneRuleConfigByKey.put(ruleKey.toString(), new StandaloneRuleConfigDto(false, sanitizedParams));
+    }));
+    return standaloneRuleConfigByKey;
+  }
+
   private void addRulesToConfig(RuleKey ruleKey, HashMap<String, StandaloneRuleConfigDto> standaloneRuleConfigByKey, boolean isActive) {
     var params = currentSettings.getRuleParameters().get(ruleKey);
     var sanitizedParams = params != null ? params : Map.<String, String>of();
@@ -189,31 +205,44 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
         var newDefaultFolderSettings = parseFolderSettings(workspaceSettingsMap, null);
         var oldDefaultFolderSettings = currentDefaultSettings;
         this.currentDefaultSettings = newDefaultFolderSettings;
-        if (initLatch.getCount() != 0) {
-          initLatch.countDown();
-          backendServiceFacade.initialize(getCurrentSettings().getServerConnections());
-        } else {
-          notifyChangeClientNodeJsPathIfNeeded(oldWorkspaceSettings, newWorkspaceSettings);
-          backendServiceFacade.getBackendService().didChangeConnections(getCurrentSettings().getServerConnections());
-          backendServiceFacade.getBackendService().updateStandaloneRulesConfiguration(getStandaloneRuleConfigByKey());
-        }
+
+        // Count down the latch immediately after settings are set to allow getCurrentSettings() calls
+        // from listeners and other components
+        initLatch.countDown();
+
+        notifyChangeClientNodeJsPathIfNeeded(oldWorkspaceSettings, newWorkspaceSettings);
+        notifyAutomaticAnalysisEnablementChangeIfNeeded(oldWorkspaceSettings, newWorkspaceSettings);
+        backendServiceFacade.getBackendService().didChangeConnections(this.currentSettings.getServerConnections());
+        backendServiceFacade.getBackendService().updateStandaloneRulesConfiguration(getStandaloneRuleConfigByKey());
 
         foldersManager.getAll().forEach(f -> updateWorkspaceFolderSettings(f, true));
+        foldersManager.initialized();
         notifyListeners(newWorkspaceSettings, oldWorkspaceSettings, newDefaultFolderSettings, oldDefaultFolderSettings);
       } catch (InterruptedException e) {
         interrupted(e, logOutput);
       } catch (Exception e) {
         logOutput.errorWithStackTrace("Unable to update configuration.", e);
       } finally {
-        client.readyForTests();
+        client.settingsApplied();
+        // Ensure latch is counted down even in case of exceptions
+        while (initLatch.getCount() > 0) {
+          initLatch.countDown();
+        }
       }
     });
   }
 
-  private void notifyChangeClientNodeJsPathIfNeeded(WorkspaceSettings oldWorkspaceSettings, WorkspaceSettings newWorkspaceSettings) {
-    var hasNodeJsPathChanged = !Objects.equals(oldWorkspaceSettings.pathToNodeExecutable(), newWorkspaceSettings.pathToNodeExecutable());
+  private void notifyChangeClientNodeJsPathIfNeeded(@Nullable WorkspaceSettings oldWorkspaceSettings, WorkspaceSettings newWorkspaceSettings) {
+    var hasNodeJsPathChanged = oldWorkspaceSettings != null && !Objects.equals(oldWorkspaceSettings.pathToNodeExecutable(), newWorkspaceSettings.pathToNodeExecutable());
     if (hasNodeJsPathChanged) {
       backendServiceFacade.getBackendService().didChangeClientNodeJsPath(new DidChangeClientNodeJsPathParams(Path.of(newWorkspaceSettings.pathToNodeExecutable())));
+    }
+  }
+
+  private void notifyAutomaticAnalysisEnablementChangeIfNeeded(@Nullable WorkspaceSettings oldWorkspaceSettings, WorkspaceSettings newWorkspaceSettings) {
+    var hasAutomaticAnalysisChanged = oldWorkspaceSettings != null && !Objects.equals(oldWorkspaceSettings.isAutomaticAnalysis(), newWorkspaceSettings.isAutomaticAnalysis());
+    if (hasAutomaticAnalysisChanged) {
+      backendServiceFacade.getBackendService().didChangeAutomaticAnalysisSetting(newWorkspaceSettings.isAutomaticAnalysis());
     }
   }
 
@@ -295,9 +324,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
 
   static Map<String, Object> updateProperties(@org.jetbrains.annotations.Nullable URI workspaceUri, Map<String, Object> settingsMap) {
     var sonarLintSettingsMap = Utils.parseToMap(settingsMap.get(SONARLINT_CONFIGURATION_NAMESPACE));
-    var analyzerProperties = (Map<String, String>) (sonarLintSettingsMap == null ?
-      Maps.newHashMap() :
-      sonarLintSettingsMap.getOrDefault(ANALYZER_PROPERTIES, Maps.newHashMap()));
+    var analyzerProperties = (Map<String, String>) (sonarLintSettingsMap == null ? Maps.newHashMap() : sonarLintSettingsMap.getOrDefault(ANALYZER_PROPERTIES, Maps.newHashMap()));
     var analysisExcludes = getStringValue(settingsMap, ANALYSIS_EXCLUDES, "");
     forceIgnoreRazorFiles(analyzerProperties);
     // Ignore those settings as C# is not supported in this plugin, and uncaught exceptions were reported here
@@ -346,11 +373,8 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
         // ignore
       }
     }
-    var resultingStringWithTrailingComma = sonarLintExcludes.isBlank() ?
-      globPatterns.toString() :
-      sonarLintExcludes.concat(",").concat(globPatterns.toString());
-    return resultingStringWithTrailingComma.isBlank() ?
-      "" : resultingStringWithTrailingComma.substring(0, resultingStringWithTrailingComma.length() - 1);
+    var resultingStringWithTrailingComma = sonarLintExcludes.isBlank() ? globPatterns.toString() : sonarLintExcludes.concat(",").concat(globPatterns.toString());
+    return resultingStringWithTrailingComma.isBlank() ? "" : resultingStringWithTrailingComma.substring(0, resultingStringWithTrailingComma.length() - 1);
   }
 
   private static void forceIgnoreRazorFiles(Map<String, String> analyzerProperties) {
@@ -394,6 +418,10 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
       interrupted(e, logOutput);
     } catch (Exception e) {
       logOutput.errorWithStackTrace("Unable to update configuration of folder " + f.getUri(), e);
+    } finally {
+      if (!notifyOnChange) {
+        client.settingsApplied();
+      }
     }
   }
 
@@ -401,6 +429,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     var disableTelemetry = (Boolean) params.getOrDefault(DISABLE_TELEMETRY, false);
     var pathToNodeExecutable = (String) params.get(PATH_TO_NODE_EXECUTABLE);
     var focusOnNewCode = (Boolean) params.getOrDefault(FOCUS_ON_NEW_CODE, false);
+    var automaticAnalysis = (Boolean) params.getOrDefault(AUTOMATIC_ANALYSIS, true);
     var analysisExcludesStandalone = (String) params.getOrDefault(ANALYSIS_EXCLUDES, "");
     var serverConnections = parseServerConnections(params);
     @SuppressWarnings("unchecked")
@@ -412,7 +441,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     var quickFixUpperCase = Boolean.parseBoolean(quickFixValue.toString());
 
     return new WorkspaceSettings(disableTelemetry, serverConnections, rulesConfiguration.excludedRules(), rulesConfiguration.includedRules(), rulesConfiguration.ruleParameters(),
-      showVerboseLogs, pathToNodeExecutable, focusOnNewCode, analysisExcludesStandalone, quickFixUpperCase);
+      showVerboseLogs, pathToNodeExecutable, focusOnNewCode, automaticAnalysis, analysisExcludesStandalone, quickFixUpperCase);
   }
 
   private Map<String, ServerConnectionSettings> parseServerConnections(Map<String, Object> params) {
@@ -458,6 +487,22 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     });
   }
 
+  public Map<String, ServerConnectionSettings> parseSonarQubeConnectionsWithoutToken(Map<String, Object> connectionsMap) {
+    var serverConnections = new HashMap<String, ServerConnectionSettings>();
+    @SuppressWarnings("unchecked")
+    var sonarqubeEntries = (List<Map<String, Object>>) connectionsMap.getOrDefault("sonarqube", Collections.emptyList());
+    sonarqubeEntries.forEach(m -> {
+      if (checkRequiredAttribute(m, "SonarQube server", SERVER_URL)) {
+        var connectionId = defaultIfBlank((String) m.get(CONNECTION_ID), DEFAULT_CONNECTION_ID);
+        var url = (String) m.get(SERVER_URL);
+        var disableNotifications = (Boolean) m.getOrDefault(DISABLE_NOTIFICATIONS, false);
+        var connectionSettings = new ServerConnectionSettings(connectionId, url, null, null, disableNotifications, null);
+        addIfUniqueConnectionId(serverConnections, connectionId, connectionSettings);
+      }
+    });
+    return serverConnections;
+  }
+
   private void parseSonarCloudConnections(Map<String, Object> connectionsMap, Map<String, ServerConnectionSettings> serverConnections) {
     @SuppressWarnings("unchecked")
     var sonarcloudEntries = (List<Map<String, Object>>) connectionsMap.getOrDefault("sonarcloud", Collections.emptyList());
@@ -476,6 +521,26 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
             token, organizationKey, disableNotifs, parsedRegion));
       }
     });
+  }
+
+  public Map<String, ServerConnectionSettings> parseSonarCloudConnectionsWithoutToken(Map<String, Object> connectionsMap) {
+    var serverConnections = new HashMap<String, ServerConnectionSettings>();
+    @SuppressWarnings("unchecked")
+    var sonarcloudEntries = (List<Map<String, Object>>) connectionsMap.getOrDefault("sonarcloud", Collections.emptyList());
+    sonarcloudEntries.forEach(m -> {
+      if (checkRequiredAttribute(m, "SonarCloud", ORGANIZATION_KEY)) {
+        var connectionId = defaultIfBlank((String) m.get(CONNECTION_ID), DEFAULT_CONNECTION_ID);
+        var organizationKey = (String) m.get(ORGANIZATION_KEY);
+        var disableNotifs = (Boolean) m.getOrDefault(DISABLE_NOTIFICATIONS, false);
+        var region = (String) m.getOrDefault(REGION_KEY, SonarCloudRegion.EU.name());
+        var parsedRegion = parseRegion(region);
+        addIfUniqueConnectionId(serverConnections, connectionId,
+          new ServerConnectionSettings(connectionId,
+            parsedRegion == SonarCloudRegion.US ? ServerConnectionSettings.getSonarCloudUSUrl() : ServerConnectionSettings.getSonarCloudUrl(),
+            null, organizationKey, disableNotifs, parsedRegion));
+      }
+    });
+    return serverConnections;
   }
 
   SonarCloudRegion parseRegion(String region) {
@@ -500,7 +565,7 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     }
   }
 
-  private boolean checkRequiredAttribute(Map<String, Object> map, String label, String... requiredAttributes) {
+  public boolean checkRequiredAttribute(Map<String, Object> map, String label, String... requiredAttributes) {
     var missing = stream(requiredAttributes).filter(att -> isBlank((String) map.get(att))).toList();
     if (!missing.isEmpty()) {
       logOutput.error(format("Incomplete %s connection configuration. Required parameters must not be blank: %s.", label, String.join(",", missing)));

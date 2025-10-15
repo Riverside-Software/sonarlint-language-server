@@ -28,7 +28,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,13 +43,10 @@ import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
-import org.eclipse.lsp4j.WorkspaceFolder;
-import org.eclipse.lsp4j.WorkspaceFoldersChangeEvent;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterAll;
@@ -86,9 +82,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.sonar.api.rules.RuleType.SECURITY_HOTSPOT;
-
 
 class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
 
@@ -107,24 +101,27 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   private static final String PROJECT_NAME1 = "Project One";
   private static final String PROJECT_KEY2 = "project:key2";
   private static final String PROJECT_NAME2 = "Project Two";
-  private static final String ORGANIZATION_KEY = "myOrganization";
   private static final long CURRENT_TIME = System.currentTimeMillis();
-  private static Path omnisharpDir;
   private static Path folder1BaseDir;
   private static Path bindingSuggestionBaseDir;
 
   @BeforeAll
   static void initialize() throws Exception {
-    omnisharpDir = makeStaticTempDir();
+    Path omnisharpDir = makeStaticTempDir();
     folder1BaseDir = makeStaticTempDir();
     initialize(Map.of(
         "telemetryStorage", "not/exists",
         "productName", "SLCORE tests",
         "productVersion", "0.1",
         "productKey", "productKey",
-        "omnisharpDirectory", omnisharpDir.toString()
-      ),
-      new WorkspaceFolder(folder1BaseDir.toUri().toString(), "My Folder 1"));
+        "omnisharpDirectory", omnisharpDir.toString(),
+        "connections", Map.of(
+          "sonarqube", List.of(Map.of(
+            "connectionId", CONNECTION_ID,
+            "serverUrl", "/"
+          ))
+        )
+      ));
 
     var fileName1 = "analysisConnected_scan_all_hotspot_then_forget_hotspot1.py";
     var fileName2 = "analysisConnected_scan_all_hotspot_then_forget_hotspot2.py";
@@ -260,16 +257,6 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
     addSonarQubeConnection(client.globalSettings, CONNECTION_ID, mockWebServerExtension.url("/"), "xxxxx");
     var folderUri = folder1BaseDir.toUri().toString();
     bindProject(getFolderSettings(folderUri), CONNECTION_ID, PROJECT_KEY);
-    client.readyForTestsLatch = new CountDownLatch(1);
-  }
-
-  @Override
-  protected void verifyConfigurationChangeOnClient() {
-    try {
-      assertTrue(client.readyForTestsLatch.await(15, SECONDS));
-    } catch (InterruptedException e) {
-      fail(e);
-    }
   }
 
   @AfterAll
@@ -563,11 +550,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   }
 
   private void addConfigScope(String configScopeId) {
-    lsProxy.getWorkspaceService()
-      .didChangeWorkspaceFolders(
-        new DidChangeWorkspaceFoldersParams(
-          new WorkspaceFoldersChangeEvent(List.of(new WorkspaceFolder(configScopeId, Path.of(URI.create(configScopeId)).getFileName().toString())), Collections.emptyList())));
-    foldersToRemove.add(configScopeId);
+    addFolder(configScopeId, Path.of(URI.create(configScopeId)).getFileName().toString());
     awaitUntilAsserted(() -> assertThat(client)
       .satisfiesAnyOf(
         c -> assertThat(c.scopeReadyForAnalysis).containsKey(configScopeId),
@@ -721,11 +704,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void openHotspotInBrowserShouldLogIfBranchNotFound() {
-    lsProxy.getWorkspaceService()
-      .didChangeWorkspaceFolders(
-        new DidChangeWorkspaceFoldersParams(
-          new WorkspaceFoldersChangeEvent(List.of(new WorkspaceFolder(folder1BaseDir.toUri().toString(), folder1BaseDir.getFileName().toString())), Collections.emptyList())));
-    foldersToRemove.add(folder1BaseDir.toUri().toString());
+    addFolder(folder1BaseDir.toUri().toString(), folder1BaseDir.getFileName().toString());
 
     lsProxy.openHotspotInBrowser(new SonarLintExtendedLanguageServer.OpenHotspotInBrowserLsParams("id", folder1BaseDir.toUri().toString()));
 
@@ -1502,9 +1481,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
       "{\"sonarQubeUri\": \"" + serverUrl + "\", \"projectKey\": \"" + PROJECT_KEY + "\"}");
     setUpFindFilesInFolderResponse(bindingSuggestionBaseDir.toUri().toString(), List.of(bindingClueFile));
 
-    var workspaceFolder = new WorkspaceFolder(bindingSuggestionBaseDir.toUri().toString(), bindingSuggestionBaseDir.getFileName().toString());
-    lsProxy.getWorkspaceService().didChangeWorkspaceFolders(new DidChangeWorkspaceFoldersParams(
-      new WorkspaceFoldersChangeEvent(List.of(workspaceFolder), Collections.emptyList())));
+    addFolder(bindingSuggestionBaseDir.toUri().toString(), bindingSuggestionBaseDir.getFileName().toString());
 
     assertTrue(client.suggestConnectionLatch.await(10, SECONDS));
 
@@ -1516,13 +1493,9 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   @Test
   void should_allow_client_to_explicitly_ask_for_binding_suggestions() {
     var workspaceUri = folder1BaseDir.resolve("foo-bar").toUri().toString();
-    var workspaceFolder = new WorkspaceFolder(workspaceUri, "foo-bar");
     client.folderSettings = new HashMap<>();
     client.folderSettings.put(workspaceUri, new HashMap<>());
-    lsProxy.getWorkspaceService().didChangeWorkspaceFolders(new DidChangeWorkspaceFoldersParams(
-      new WorkspaceFoldersChangeEvent(List.of(workspaceFolder), Collections.emptyList())));
-
-    foldersToRemove.add(workspaceUri);
+    addFolder(workspaceUri, "foo-bar");
 
     // Availability of binding suggestions for the added folder can take some time
     awaitUntilAsserted(() -> {
@@ -1545,9 +1518,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
       "{\"sonarQubeUri\": \"" + serverUrl + "\", \"projectKey\": \"" + PROJECT_KEY + "\"}");
     setUpFindFilesInFolderResponse(bindingSuggestionBaseDir.toUri().toString(), List.of(bindingClueFile));
 
-    var workspaceFolder = new WorkspaceFolder(bindingSuggestionBaseDir.toUri().toString(), bindingSuggestionBaseDir.getFileName().toString());
-    lsProxy.getWorkspaceService().didChangeWorkspaceFolders(new DidChangeWorkspaceFoldersParams(
-      new WorkspaceFoldersChangeEvent(List.of(workspaceFolder), Collections.emptyList())));
+    addFolder(bindingSuggestionBaseDir.toUri().toString(), bindingSuggestionBaseDir.getFileName().toString());
 
     assertTrue(client.suggestConnectionLatch.await(10, SECONDS));
 

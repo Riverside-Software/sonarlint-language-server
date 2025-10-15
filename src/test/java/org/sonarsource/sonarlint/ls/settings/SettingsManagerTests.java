@@ -31,7 +31,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import javax.annotation.Nullable;
 import org.eclipse.lsp4j.MessageType;
@@ -45,7 +44,6 @@ import org.sonar.api.rule.RuleKey;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeClientNodeJsPathParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
-import org.sonarsource.sonarlint.ls.backend.BackendInitParams;
 import org.sonarsource.sonarlint.ls.backend.BackendService;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
@@ -101,9 +99,9 @@ class SettingsManagerTests {
       },
       "pathToCompileCommands": "/pathToCompileCommand",
       "disableTelemetry": true,
-    "output": {
-      "showVerboseLogs": true
-    },
+      "output": {
+        "showVerboseLogs": true
+      },
       "rules": {
         "xoo:rule1": {
           "level": "off"
@@ -149,10 +147,7 @@ class SettingsManagerTests {
     when(client.getTokenForServer(any())).thenReturn(CompletableFuture.supplyAsync(() -> "token-from-storage"));
     var backendFacade = mock(BackendServiceFacade.class);
     backendService = mock(BackendService.class);
-    when(backendFacade.getInitParams()).thenReturn(new BackendInitParams());
     when(backendFacade.getBackendService()).thenReturn(backendService);
-    var backendInitLatch = new CountDownLatch(1);
-    when(backendFacade.getInitLatch()).thenReturn(backendInitLatch);
     underTest = new SettingsManager(client, foldersManager, new ImmediateExecutorService(), backendFacade, logTester.getLogger());
     underTest = spy(underTest);
   }
@@ -175,7 +170,6 @@ class SettingsManagerTests {
     doReturn(CompletableFuture.supplyAsync(() -> fromJsonString(json))).when(underTest).requestSonarLintAndOmnisharpConfigurationAsync(uri);
   }
 
-
   @Test
   void shouldParseFullDeprecatedWellFormedJsonWorkspaceFolderSettings() {
     mockConfigurationRequest(null, DEPRECATED_SAMPLE_CONFIG);
@@ -186,7 +180,6 @@ class SettingsManagerTests {
     assertThat(settings.getProjectKey()).isEqualTo("myProject");
   }
 
-
   @Test
   void shouldParseFullWellFormedJsonWorkspaceSettings() {
     mockConfigurationRequest(null, FULL_SAMPLE_CONFIG);
@@ -194,6 +187,7 @@ class SettingsManagerTests {
     var settings = underTest.getCurrentSettings();
     assertThat(settings.isDisableTelemetry()).isTrue();
     assertThat(settings.showVerboseLogs()).isTrue();
+    assertThat(settings.isAutomaticAnalysis()).isTrue();
     assertThat(settings.getExcludedRules()).extracting(RuleKey::repository, RuleKey::rule).containsOnly(tuple("xoo", "rule1"), tuple("xoo", "rule2"), tuple("xoo", "notEvenARule"));
     assertThat(settings.getIncludedRules()).extracting(RuleKey::repository, RuleKey::rule).containsOnly(tuple("xoo", "rule3"), tuple("xoo", "rule4"));
     assertThat(settings.getRuleParameters()).hasSize(1).containsOnlyKeys(RuleKey.parse("xoo:rule4"));
@@ -210,6 +204,44 @@ class SettingsManagerTests {
         tuple("sc2", "https://sonarcloud.io", "token-from-storage", "myOrga2"));
   }
 
+  @Test
+  void shouldParseConnectionsWithoutTokens() {
+    var connectionsMap = Map.<String, Object>of(
+      "sonarqube", List.of(Map.of(
+        "connectionId", "sq1",
+        "serverUrl", "/"), Map.of("connectionId", "sq2", "serverUrl", "https://mysonarqube2.mycompany.org")),
+      "sonarcloud", List.of(Map.of(
+        "connectionId", "sc1",
+        "organizationKey", "myOrga1"), Map.of("connectionId", "sc2", "organizationKey", "myOrga2")));
+
+    var cloudConnections = underTest.parseSonarCloudConnectionsWithoutToken(connectionsMap);
+    var serverConnections = underTest.parseSonarQubeConnectionsWithoutToken(connectionsMap);
+
+    assertThat(serverConnections).containsKeys("sq1", "sq2");
+    assertThat(serverConnections.get("sq1").getServerUrl()).isEqualTo("/");
+    assertThat(serverConnections.get("sq2").getServerUrl()).isEqualTo("https://mysonarqube2.mycompany.org");
+    assertThat(cloudConnections).containsKeys("sc1", "sc2");
+    assertThat(cloudConnections.get("sc1").getOrganizationKey()).isEqualTo("myOrga1");
+    assertThat(cloudConnections.get("sc2").getOrganizationKey()).isEqualTo("myOrga2");
+    assertThat(serverConnections.get("sq1").getToken()).isNull();
+    assertThat(serverConnections.get("sq2").getToken()).isNull();
+    assertThat(cloudConnections.get("sc1").getToken()).isNull();
+    assertThat(cloudConnections.get("sc2").getToken()).isNull();
+  }
+
+  @Test
+  void shouldParseStandaloneRuleConfiguration() {
+    var exampleRawRulesConfig = (Map) Map.of(
+      "docker:S2260", Map.of("level", "on"),
+      "python:S1481", Map.of("level", "off"),
+      "python:S3776", Map.of("level", "on", "parameters", Map.of("threshold", "10")));
+    var ruleConfig = RulesConfiguration.parse(exampleRawRulesConfig);
+
+    var parsingResult = underTest.getStandaloneRuleConfigByKey(ruleConfig);
+    assertThat(parsingResult).hasSize(3);
+    assertThat(parsingResult.get("python:S3776").isActive()).isTrue();
+    assertThat(parsingResult.get("python:S3776").getParamValueByKey()).containsOnly(entry("threshold", "10"));
+  }
 
   @Test
   void shouldLogErrorIfIncompleteConnections() {
@@ -237,7 +269,6 @@ class SettingsManagerTests {
       .anyMatch(log -> log.contains("Incomplete SonarQube server connection configuration. Required parameters must not be blank: serverUrl."))
       .anyMatch(log -> log.contains("Incomplete SonarCloud connection configuration. Required parameters must not be blank: organizationKey."));
   }
-
 
   @Test
   void shouldLogErrorIfDuplicateConnectionId() {
@@ -280,7 +311,6 @@ class SettingsManagerTests {
     assertThat(settings.getServerConnections().get("usConn").getServerUrl()).isEqualTo(ServerConnectionSettings.getSonarCloudUSUrl());
   }
 
-
   @Test
   void shouldLogErrorIfDuplicateConnectionsWithoutId() {
     mockConfigurationRequest(null, """
@@ -299,9 +329,9 @@ class SettingsManagerTests {
 
     var settings = underTest.getCurrentSettings();
     assertThat(settings.getServerConnections()).containsKeys("<default>");
-    assertThat(logTester.logs(MessageType.Log)).anyMatch(log -> log.contains("Please specify a unique 'connectionId' in your settings for each of the SonarQube (Server, Cloud) connections."));
+    assertThat(logTester.logs(MessageType.Log))
+      .anyMatch(log -> log.contains("Please specify a unique 'connectionId' in your settings for each of the SonarQube (Server, Cloud) connections."));
   }
-
 
   @Test
   void shouldParseFullDeprecatedWellFormedJsonWorkspaceSettings() {
@@ -316,7 +346,6 @@ class SettingsManagerTests {
       .containsExactlyInAnyOrder(tuple("server1", "https://mysonarqube.mycompany.org", "ab12", null),
         tuple("sc", "https://sonarcloud.io", "cd34", "myOrga"));
   }
-
 
   @Test
   void shouldLogErrorIfNoConnectionToDefault() {
@@ -340,7 +369,6 @@ class SettingsManagerTests {
       .anyMatch(log -> log.contains("No SonarQube (Server, Cloud) connections defined for your binding. Please update your settings."));
   }
 
-
   @Test
   void shouldDefaultIfOnlyOneConnectionId() {
     mockConfigurationRequest(null, """
@@ -362,7 +390,6 @@ class SettingsManagerTests {
     assertThat(settings.getConnectionId()).isEqualTo("sq");
     assertThat(settings.getProjectKey()).isEqualTo("myProject");
   }
-
 
   @Test
   void shouldDefaultIfNoConnectionId() {
@@ -388,7 +415,6 @@ class SettingsManagerTests {
     assertThat(settings.getProjectKey()).isEqualTo("myProject");
   }
 
-
   @Test
   void shouldLogAnErrorIfAmbiguousConnectionId() {
     mockConfigurationRequest(null, FULL_SAMPLE_CONFIG);
@@ -411,9 +437,9 @@ class SettingsManagerTests {
     assertThat(settings.getConnectionId()).isNull();
     assertThat(settings.getProjectKey()).isEqualTo("myProject");
     assertThat(logTester.logs(MessageType.Log))
-      .anyMatch(log -> log.contains("Multiple connections defined in your settings. Please specify a 'connectionId' in your binding with one of [sc1,sq1,sc2,sq2] to disambiguate."));
+      .anyMatch(
+        log -> log.contains("Multiple connections defined in your settings. Please specify a 'connectionId' in your binding with one of [sc1,sq1,sc2,sq2] to disambiguate."));
   }
-
 
   @Test
   void shouldLogAnErrorIfUnknownConnectionId() {
@@ -441,7 +467,6 @@ class SettingsManagerTests {
       .anyMatch(log -> log.contains("No SonarQube (Server, Cloud) connections defined for your binding with id 'unknown'. Please update your settings."));
   }
 
-
   @Test
   void shouldHaveLocalRuleConfigurationWithDisabledRule() {
     mockConfigurationRequest(null, """
@@ -459,7 +484,6 @@ class SettingsManagerTests {
     assertThat(settings.hasLocalRuleConfiguration()).isTrue();
   }
 
-
   @Test
   void shouldHaveLocalRuleConfigurationWithEnabledRule() {
     mockConfigurationRequest(null, """
@@ -476,7 +500,6 @@ class SettingsManagerTests {
     var settings = underTest.getCurrentSettings();
     assertThat(settings.hasLocalRuleConfiguration()).isTrue();
   }
-
 
   @Test
   void shouldParseScalarParameterValuesWithSomeTolerance() {
@@ -508,7 +531,6 @@ class SettingsManagerTests {
       entry("stringParam", "you get the picture"));
   }
 
-
   @Test
   void workspaceFolderVariableForPathToCompileCommands(@TempDir Path workspaceFolder) {
     var config = """
@@ -532,7 +554,6 @@ class SettingsManagerTests {
     var settings = folderWrapper.getSettings();
     assertThat(settings.getPathToCompileCommands()).isEqualTo(workspaceFolder.resolve("pathToCompileCommand").toString());
   }
-
 
   @Test
   void workspaceFolderVariableForPathToCompileCommandsShouldWorkWithoutFileSeparator(@TempDir Path workspaceFolder) {
@@ -558,7 +579,6 @@ class SettingsManagerTests {
     assertThat(settings.getPathToCompileCommands()).isEqualTo(workspaceFolder.resolve("pathToCompileCommand").toString());
   }
 
-
   @Test
   void workspaceFolderVariableForPathToCompileCommandsShouldWorkWithWindowsFileSeparator(@TempDir Path workspaceFolder) {
     var config = """
@@ -583,7 +603,6 @@ class SettingsManagerTests {
     assertThat(settings.getPathToCompileCommands()).isEqualTo(workspaceFolder.resolve("pathToCompileCommand").toString());
   }
 
-
   @Test
   void workspaceFolderVariableShouldNotWorkForGlobalConfiguration() {
     var config = """
@@ -605,7 +624,6 @@ class SettingsManagerTests {
       .anyMatch(log -> log.contains("Using ${workspaceFolder} variable in sonarlint.pathToCompileCommands is only supported for files in the workspace"));
   }
 
-
   @Test
   void pathToCompileCommandsWithoutWorkspaceFolderVariableForGlobalConfigShouldBeAccepted() {
     var config = """
@@ -625,7 +643,6 @@ class SettingsManagerTests {
 
     assertThat(settings.getPathToCompileCommands()).isEqualTo("/pathToCompileCommand");
   }
-
 
   @Test
   void workspaceFolderVariableShouldBePrefixOfPropertyValue() {
@@ -647,7 +664,6 @@ class SettingsManagerTests {
     assertThat(logTester.logs(MessageType.Log))
       .anyMatch(log -> log.contains("Variable ${workspaceFolder} for sonarlint.pathToCompileCommands should be the prefix."));
   }
-
 
   @Test
   void failForNotValidWorkspaceFolderPath() {
@@ -674,7 +690,6 @@ class SettingsManagerTests {
       .anyMatch(log -> log.contains("Workspace folder is not in local filesystem, analysis not supported."));
   }
 
-
   @Test
   void ifCanNotGetTokenFromClientDueToInterruptedExceptionShouldLogError() {
     when(client.getTokenForServer(any())).thenReturn(CompletableFuture.failedFuture(new InterruptedException()));
@@ -698,7 +713,6 @@ class SettingsManagerTests {
     assertThat(logTester.logs(MessageType.Log))
       .anyMatch(log -> log.contains("Can't get token for server https://mysonarqube1.mycompany.org"));
   }
-
 
   @Test
   void ifCanNotGetTokenFromClientDueToExcecutionExceptionShouldLogError() {
@@ -724,13 +738,11 @@ class SettingsManagerTests {
       .anyMatch(log -> log.contains("Can't get token for server https://mysonarqube1.mycompany.org"));
   }
 
-
   @Test
   void shouldReturnUntouchedNonNullConnectionId() {
     var connectionId = "connectionId";
     assertThat(SettingsManager.connectionIdOrDefault(connectionId)).isEqualTo(connectionId);
   }
-
 
   @Test
   void shouldReturnDefaultConnectionIdIfNull() {
@@ -843,11 +855,43 @@ class SettingsManagerTests {
 
     mockConfigurationRequest(null, """
       {
-      "disableTelemetry" : "true"}
+      "disableTelemetry" : true}
       """);
     underTest.didChangeConfiguration();
 
     verify(backendService, never()).didChangeClientNodeJsPath(any());
+  }
+
+  @Test
+  void shouldNotifyAboutAutomaticAnalysisSettingChange() {
+    mockConfigurationRequest(null, FULL_SAMPLE_CONFIG);
+    underTest.didChangeConfiguration();
+
+    mockConfigurationRequest(null, """
+      {
+      "automaticAnalysis" : false
+      }
+      """);
+    underTest.didChangeConfiguration();
+
+    var argumentCaptor = ArgumentCaptor.forClass(Boolean.class);
+    verify(backendService).didChangeAutomaticAnalysisSetting(argumentCaptor.capture());
+    assertThat(argumentCaptor.getValue()).isFalse();
+  }
+
+  @Test
+  void shouldNotNotifyAboutAutomaticAnalysisSettingChange() {
+    mockConfigurationRequest(null, FULL_SAMPLE_CONFIG);
+    underTest.didChangeConfiguration();
+
+    mockConfigurationRequest(null, """
+      {
+      "disableTelemetry" : true
+      }
+      """);
+    underTest.didChangeConfiguration();
+
+    verify(backendService, never()).didChangeAutomaticAnalysisSetting(any(Boolean.class));
   }
 
   @Test
@@ -856,6 +900,7 @@ class SettingsManagerTests {
     var sonarLintSettings = new JsonObject();
     sonarLintSettings.add("disableTelemetry", new JsonPrimitive(false));
     sonarLintSettings.add("focusOnNewCode", new JsonPrimitive(true));
+    sonarLintSettings.add("automaticAnalysis", new JsonPrimitive(true));
     Map<String, Object> settingsMap = new HashMap<>(Map.of(SONARLINT_CONFIGURATION_NAMESPACE, sonarLintSettings,
       DOTNET_DEFAULT_SOLUTION_PATH, JsonNull.INSTANCE,
       OMNISHARP_USE_MODERN_NET, JsonNull.INSTANCE,

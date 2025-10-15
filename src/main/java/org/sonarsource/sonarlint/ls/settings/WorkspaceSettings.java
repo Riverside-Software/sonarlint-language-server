@@ -42,13 +42,14 @@ public class WorkspaceSettings {
   private final boolean showVerboseLogs;
   private final String pathToNodeExecutable;
   private final boolean focusOnNewCode;
+  private final boolean automaticAnalysis;
   private final boolean quickFixUpperCase;
 
   private final String analysisExcludes;
 
   public WorkspaceSettings(boolean disableTelemetry, Map<String, ServerConnectionSettings> connections,
     Collection<RuleKey> excludedRules, Collection<RuleKey> includedRules, Map<RuleKey, Map<String, String>> ruleParameters,
-    boolean showVerboseLogs, String pathToNodeExecutable, boolean focusOnNewCode, String analysisExcludes, boolean quickFixUpperCase) {
+    boolean showVerboseLogs, String pathToNodeExecutable, boolean focusOnNewCode, boolean automaticAnalysis, String analysisExcludes, boolean quickFixUpperCase) {
     this.disableTelemetry = disableTelemetry;
     this.connections = connections;
     this.excludedRules = excludedRules;
@@ -57,6 +58,7 @@ public class WorkspaceSettings {
     this.showVerboseLogs = showVerboseLogs;
     this.pathToNodeExecutable = pathToNodeExecutable;
     this.focusOnNewCode = focusOnNewCode;
+    this.automaticAnalysis = automaticAnalysis;
     this.analysisExcludes = analysisExcludes;
     this.quickFixUpperCase = quickFixUpperCase;
   }
@@ -95,6 +97,10 @@ public class WorkspaceSettings {
 
   public boolean isFocusOnNewCode() {
     return focusOnNewCode;
+  }
+
+  public boolean isAutomaticAnalysis() {
+    return automaticAnalysis;
   }
 
   public String getAnalysisExcludes() {

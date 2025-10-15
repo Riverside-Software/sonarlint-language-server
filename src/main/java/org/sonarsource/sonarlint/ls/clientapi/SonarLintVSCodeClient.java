@@ -42,6 +42,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -93,7 +94,6 @@ import org.sonarsource.sonarlint.core.rpc.protocol.common.TokenDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.UsernamePasswordDto;
 import org.sonarsource.sonarlint.ls.AnalysisHelper;
 import org.sonarsource.sonarlint.ls.DiagnosticPublisher;
-import org.sonarsource.sonarlint.ls.ForcedAnalysisCoordinator;
 import org.sonarsource.sonarlint.ls.SkippedPluginsNotifier;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.CreateConnectionParams;
@@ -136,7 +136,6 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   private final TaintVulnerabilitiesCache taintVulnerabilitiesCache;
   private final DependencyRisksCache dependencyRisksCache;
   private WorkspaceFoldersManager workspaceFoldersManager;
-  private ForcedAnalysisCoordinator forcedAnalysisCoordinator;
   private DiagnosticPublisher diagnosticPublisher;
   private final ScheduledExecutorService bindingSuggestionsHandler;
   private final SkippedPluginsNotifier skippedPluginsNotifier;
@@ -330,19 +329,23 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
   @Override
   public Either<TokenDto, UsernamePasswordDto> getCredentials(String connectionId) {
     var connectionSettings = settingsManager.getCurrentSettings().getServerConnections().get(connectionId);
-    if (connectionSettings == null) {
+    var serverUrlOrOrganization = connectionSettings.isSonarCloudAlias() ? (connectionSettings.getRegion() + "_" + connectionSettings.getOrganizationKey())
+      : connectionSettings.getServerUrl();
+    try {
+      return Either.forLeft(new TokenDto(client.getTokenForServer(serverUrlOrOrganization).get()));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      logOutput.errorWithStackTrace("Can't get token for server " + serverUrlOrOrganization, e);
+      return null;
+    } catch (ExecutionException e) {
+      logOutput.errorWithStackTrace("Can't get token for server " + serverUrlOrOrganization, e);
       return null;
     }
-    var token = connectionSettings.getToken();
-    if (token == null || token.isBlank()) {
-      return null;
-    }
-    return Either.forLeft(new TokenDto(token));
   }
 
   @Override
   public TelemetryClientLiveAttributesResponse getTelemetryLiveAttributes() {
-    return new TelemetryClientLiveAttributesResponse(backendServiceFacade.getTelemetryInitParams().additionalAttributes());
+    return new TelemetryClientLiveAttributesResponse(Map.of());
   }
 
   @Override
@@ -526,8 +529,6 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
           getNewCodeDefinitionAndSubmitToClient(folderUri.toString());
           return null;
         });
-
-        forcedAnalysisCoordinator.analyzeAllUnboundOpenFiles();
       });
       initializeTaintCache(configurationScopeIds);
     }
@@ -615,10 +616,6 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     this.workspaceFoldersManager = workspaceFoldersManager;
   }
 
-  public void setAnalysisScheduler(ForcedAnalysisCoordinator analysisScheduler) {
-    this.forcedAnalysisCoordinator = analysisScheduler;
-  }
-
   public void setDiagnosticPublisher(DiagnosticPublisher diagnosticPublisher) {
     this.diagnosticPublisher = diagnosticPublisher;
   }
@@ -669,7 +666,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
     var excludes = settingsManager.getCurrentSettings().getAnalysisExcludes();
     return excludes.isEmpty() ? Collections.emptySet()
       : Arrays.stream(excludes.split(","))
-      .collect(Collectors.toSet());
+        .collect(Collectors.toSet());
   }
 
   @Override
