@@ -92,7 +92,6 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
   private static final String TEST_FILE_PATTERN = "testFilePattern";
   static final String ANALYZER_PROPERTIES = "analyzerProperties";
   private static final String OUTPUT = "output";
-  private static final String SHOW_ANALYZER_LOGS = "showAnalyzerLogs";
   private static final String SHOW_VERBOSE_LOGS = "showVerboseLogs";
   private static final String PATH_TO_NODE_EXECUTABLE = "pathToNodeExecutable";
   private static final String PATH_TO_COMPILE_COMMANDS = "pathToCompileCommands";
@@ -408,13 +407,12 @@ public class SettingsManager implements WorkspaceFolderLifecycleListener {
     var rulesConfiguration = RulesConfiguration.parse(((Map<String, Object>) params.getOrDefault(RULES, Collections.emptyMap())));
     @SuppressWarnings("unchecked")
     var consoleParams = ((Map<String, Object>) params.getOrDefault(OUTPUT, Collections.emptyMap()));
-    var showAnalyzerLogs = (Boolean) consoleParams.getOrDefault(SHOW_ANALYZER_LOGS, false);
     var showVerboseLogs = (Boolean) consoleParams.getOrDefault(SHOW_VERBOSE_LOGS, false);
     var quickFixValue = params.getOrDefault(QUICKFIX_UPPER_CASE, "");
     var quickFixUpperCase = Boolean.parseBoolean(quickFixValue.toString());
 
     return new WorkspaceSettings(disableTelemetry, serverConnections, rulesConfiguration.excludedRules(), rulesConfiguration.includedRules(), rulesConfiguration.ruleParameters(),
-      showAnalyzerLogs, showVerboseLogs, pathToNodeExecutable, focusOnNewCode, analysisExcludesStandalone, quickFixUpperCase);
+      showVerboseLogs, pathToNodeExecutable, focusOnNewCode, analysisExcludesStandalone, quickFixUpperCase);
   }
 
   private Map<String, ServerConnectionSettings> parseServerConnections(Map<String, Object> params) {

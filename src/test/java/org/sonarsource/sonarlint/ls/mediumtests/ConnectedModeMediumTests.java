@@ -96,7 +96,7 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   private static final String PYTHON_S1481 = "python:S1481";
   private static final String PYTHON_S1313 = "python:S1313";
   private static final String PROJECT_KEY = "myProject";
-  public static final String LANGUAGES_LIST = "apex,c,cpp,cs,css,cobol,web,java,js,php,plsql,py,secrets,tsql,ts,xml,yaml,json,go,cloudformation,docker,kubernetes,terraform,azureresourcemanager,ansible";
+  public static final String LANGUAGES_LIST = "apex,c,cpp,cs,css,cobol,web,java,js,php,plsql,py,secrets,text,tsql,ts,xml,yaml,json,go,cloudformation,docker,kubernetes,terraform,azureresourcemanager,ansible,githubactions";
 
   @RegisterExtension
   private final MockWebServerExtension mockWebServerExtension = new MockWebServerExtension();
@@ -257,7 +257,6 @@ class ConnectedModeMediumTests extends AbstractLanguageServerMediumTests {
   protected void setUpFolderSettings(Map<String, Map<String, Object>> folderSettings) {
     mockSonarQube();
     setShowVerboseLogs(client.globalSettings, true);
-    setShowAnalyzerLogs(client.globalSettings, true);
     addSonarQubeConnection(client.globalSettings, CONNECTION_ID, mockWebServerExtension.url("/"), "xxxxx");
     var folderUri = folder1BaseDir.toUri().toString();
     bindProject(getFolderSettings(folderUri), CONNECTION_ID, PROJECT_KEY);

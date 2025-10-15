@@ -64,7 +64,7 @@ public class EnabledLanguages {
   public Map<String, Path> getConnectedModeEmbeddedPluginPathsByKey() {
     var plugins = new HashMap<String, Path>();
     Stream.of(ConnectedModeEmbeddedPlugin.values())
-        .forEach(plugin -> addPluginPathOrWarn(plugin, plugins));
+      .forEach(plugin -> addPluginPathOrWarn(plugin, plugins));
 
     analyzers.stream().filter(it -> it.toString().endsWith("sonarlintomnisharp.jar")).findFirst()
       .ifPresent(p -> plugins.put("omnisharp", p));
