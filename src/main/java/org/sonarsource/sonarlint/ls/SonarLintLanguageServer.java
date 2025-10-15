@@ -118,6 +118,7 @@ import org.sonarsource.sonarlint.ls.connected.notifications.SmartNotifications;
 import org.sonarsource.sonarlint.ls.file.FileTypeClassifier;
 import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
 import org.sonarsource.sonarlint.ls.file.VersionedOpenFile;
+import org.sonarsource.sonarlint.ls.flightrecorder.FlightRecorderManager;
 import org.sonarsource.sonarlint.ls.folders.ModuleEventsProcessor;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderBranchManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
@@ -156,6 +157,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   public static final String JUPYTER_NOTEBOOK_TYPE = "jupyter-notebook";
   public static final String PYTHON_LANGUAGE = "python";
   private final SonarLintExtendedLanguageClient client;
+  private final FlightRecorderManager flightRecorderManager;
   private final SonarLintTelemetry telemetry;
   private final WorkspaceFoldersManager workspaceFoldersManager;
   private final SettingsManager settingsManager;
@@ -205,6 +207,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     this.lsLogOutput = new LanguageClientLogger(this.client);
     this.openFilesCache = new OpenFilesCache(lsLogOutput);
 
+    this.flightRecorderManager = new FlightRecorderManager(client);
     this.issuesCache = new IssuesCache();
     this.securityHotspotsCache = new HotspotsCache();
     var taintVulnerabilitiesCache = new TaintVulnerabilitiesCache();
@@ -215,9 +218,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     this.hostInfoProvider = new HostInfoProvider();
     var skippedPluginsNotifier = new SkippedPluginsNotifier(client, lsLogOutput);
     var promotionalNotifications = new PromotionalNotifications(client);
-    vsCodeClient = new SonarLintVSCodeClient(client, hostInfoProvider, lsLogOutput, taintVulnerabilitiesCache,
-      dependencyRisksCache,
-      skippedPluginsNotifier, promotionalNotifications);
+    vsCodeClient = new SonarLintVSCodeClient(client, hostInfoProvider, lsLogOutput, taintVulnerabilitiesCache, dependencyRisksCache, skippedPluginsNotifier,
+      promotionalNotifications, flightRecorderManager);
     this.backendServiceFacade = new BackendServiceFacade(vsCodeClient, lsLogOutput, client, new EnabledLanguages(analyzers, lsLogOutput));
     vsCodeClient.setBackendServiceFacade(backendServiceFacade);
     this.workspaceFoldersManager = new WorkspaceFoldersManager(backendServiceFacade, lsLogOutput);
@@ -325,6 +327,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     CompletableFutures.computeAsync(cancelToken -> {
       lsLogOutput.debug("Language Server initialized");
       settingsManager.didChangeConfiguration();
+      flightRecorderManager.initialized();
       return null;
     });
   }
@@ -991,22 +994,22 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
 
   @Override
   public CompletableFuture<Void> analyseOpenFileIgnoringExcludes(AnalyseOpenFileIgnoringExcludesParams params) {
-    var notebookUriStr = params.getNotebookUri();
+    var notebookUriStr = params.notebookUri();
     URI documentUri;
     VersionedOpenFile versionedOpenFile;
     if (notebookUriStr != null) {
       documentUri = create(notebookUriStr);
-      var version = params.getNotebookVersion();
+      var version = params.notebookVersion();
       var notebookUri = create(notebookUriStr);
       requireNonNull(version);
-      var cells = requireNonNull(params.getNotebookCells());
+      var cells = requireNonNull(params.notebookCells());
       var notebookFile = VersionedOpenNotebook.create(
         notebookUri, version,
         cells, notebookDiagnosticPublisher);
       versionedOpenFile = notebookFile.asVersionedOpenFile();
       openNotebooksCache.didOpen(notebookUri, version, cells);
     } else {
-      var document = requireNonNull(params.getTextDocument());
+      var document = requireNonNull(params.textDocument());
       documentUri = create(document.getUri());
       versionedOpenFile = openFilesCache.didOpen(create(document.getUri()), document.getLanguageId(), document.getText(), document.getVersion());
     }
@@ -1015,10 +1018,17 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
       CompletableFutures.computeAsync(cancelChecker -> {
         moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(versionedOpenFile);
         workspaceFolder.ifPresent(folder -> backendServiceFacade.getBackendService().analyzeFilesList(folder.getUri().toString(), List.of(documentUri)));
+        if (params.triggeredByUser()) {
+          telemetry.currentFileAnalysisTriggered();
+        }
         return null;
       });
     }
     return CompletableFuture.completedFuture(null);
   }
 
+  @Override
+  public void dumpThreads() {
+    backendServiceFacade.getBackendService().dumpThreads();
+  }
 }
