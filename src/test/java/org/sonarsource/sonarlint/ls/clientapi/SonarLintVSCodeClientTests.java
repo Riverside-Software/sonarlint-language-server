@@ -118,6 +118,7 @@ import org.sonarsource.sonarlint.ls.connected.api.HostInfoProvider;
 import org.sonarsource.sonarlint.ls.connected.notifications.SmartNotifications;
 import org.sonarsource.sonarlint.ls.domain.DependencyRisk;
 import org.sonarsource.sonarlint.ls.domain.TaintIssue;
+import org.sonarsource.sonarlint.ls.embeddedserver.EmbeddedServerManager;
 import org.sonarsource.sonarlint.ls.flightrecorder.FlightRecorderManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderBranchManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
@@ -176,6 +177,7 @@ class SonarLintVSCodeClientTests {
   DiagnosticPublisher diagnosticPublisher = mock(DiagnosticPublisher.class);
   PromotionalNotifications promotionalNotifications = mock(PromotionalNotifications.class);
   FlightRecorderManager flightRecorderManager = mock(FlightRecorderManager.class);
+  EmbeddedServerManager embeddedServerManager = mock(EmbeddedServerManager.class);
 
   AnalysisHelper analysisHelper = mock(AnalysisHelper.class);
   WorkspaceFolderBranchManager branchManager = mock(WorkspaceFolderBranchManager.class);
@@ -219,7 +221,8 @@ class SonarLintVSCodeClientTests {
 
   @BeforeEach
   void setup() throws IOException {
-    underTest = new SonarLintVSCodeClient(client, server, logTester.getLogger(), taintVulnerabilitiesCache, dependencyRisksCache, skippedPluginsNotifier, promotionalNotifications, flightRecorderManager);
+    underTest = new SonarLintVSCodeClient(client, server, logTester.getLogger(), taintVulnerabilitiesCache, dependencyRisksCache, skippedPluginsNotifier, promotionalNotifications,
+      flightRecorderManager, embeddedServerManager);
     underTest.setSmartNotifications(smartNotifications);
     underTest.setSettingsManager(settingsManager);
     underTest.setBindingManager(bindingManager);
@@ -530,7 +533,7 @@ class SonarLintVSCodeClientTests {
 
     underTest.noBindingSuggestionFound(new NoBindingSuggestionFoundParams(projectKey, false));
     verify(client).showMessageRequest(messageRequestParams);
-    verify(client).browseTo("https://docs.sonarsource.com/sonarqube-for-ide/vs-code/troubleshooting/#troubleshooting-connected-mode-setup");
+    verify(client).browseTo("https://docs.sonarsource.com/sonarqube-for-vs-code/troubleshooting/#troubleshooting-connected-mode-setup");
   }
 
   @Test
@@ -814,7 +817,7 @@ class SonarLintVSCodeClientTests {
     var configScopeId = "file:///my/config/scope";
     var language = Language.TS;
     var reason = DidSkipLoadingPluginParams.SkipReason.UNSATISFIED_NODE_JS;
-    var minVersion = "18.18";
+    var minVersion = "20.11";
 
     underTest.didSkipLoadingPlugin(configScopeId, language, reason, minVersion, null);
 
@@ -1065,7 +1068,7 @@ class SonarLintVSCodeClientTests {
   private TaintVulnerabilityDto getTaintDto(UUID uuid) {
     return new TaintVulnerabilityDto(uuid, "serverKey", false, "ruleKey", "message",
       Path.of("filePath"), Instant.now(), org.sonarsource.sonarlint.core.rpc.protocol.common.Either
-        .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)),
+      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)),
       List.of(),
       new TextRangeWithHashDto(5, 5, 5, 5, ""), "", true, false);
   }
@@ -1073,7 +1076,7 @@ class SonarLintVSCodeClientTests {
   private TaintIssue getTaintIssue(UUID uuid) {
     return new TaintIssue(new TaintVulnerabilityDto(uuid, "serverKey", false, "ruleKey", "message",
       Path.of("filePath"), Instant.now(), org.sonarsource.sonarlint.core.rpc.protocol.common.Either
-        .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)),
+      .forLeft(new StandardModeDetails(IssueSeverity.MAJOR, RuleType.BUG)),
       List.of(),
       new TextRangeWithHashDto(5, 5, 5, 5, ""), "", true, false), "folderUri", true);
   }
