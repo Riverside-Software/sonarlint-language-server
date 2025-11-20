@@ -57,6 +57,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.SonarCloud
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.SonarQubeCloudRegionDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.SslConfigurationDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.TelemetryClientConstantAttributesDto;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.log.LogLevel;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.SonarCloudRegion;
 import org.sonarsource.sonarlint.ls.EnabledLanguages;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient;
@@ -147,7 +148,8 @@ public class BackendServiceFacade {
       initializationOptions.focusOnNewCode(),
       languageSpecificRequirements,
       initializationOptions.automaticAnalysis(),
-      null);
+      null,
+      LogLevel.DEBUG);
   }
 
   static String determineProductKey(String appName, String clientProductKey) {
@@ -165,7 +167,7 @@ public class BackendServiceFacade {
     var backendCapabilities = EnumSet.of(BackendCapability.SMART_NOTIFICATIONS, BackendCapability.PROJECT_SYNCHRONIZATION,
       BackendCapability.EMBEDDED_SERVER, BackendCapability.SERVER_SENT_EVENTS, BackendCapability.DATAFLOW_BUG_DETECTION,
       BackendCapability.FULL_SYNCHRONIZATION, BackendCapability.SECURITY_HOTSPOTS, BackendCapability.ISSUE_STREAMING,
-      BackendCapability.SCA_SYNCHRONIZATION);
+      BackendCapability.SCA_SYNCHRONIZATION, BackendCapability.CONTEXT_GENERATION);
     if (telemetry != null && telemetry.enabled()) {
       backendCapabilities.add(BackendCapability.TELEMETRY);
     }
