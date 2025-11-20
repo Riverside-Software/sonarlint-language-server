@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2025 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource Sàrl
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -23,17 +23,21 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.WorkspaceFolder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.sonarsource.sonarlint.core.issue.IssueNotFoundException;
 import org.sonarsource.sonarlint.core.rpc.protocol.SonarLintRpcServer;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAssistedIde;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAssistedIdeRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgent;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgentRpcService;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetRuleFileContentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalysisRpcService;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeAutomaticAnalysisSettingParams;
@@ -49,6 +53,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.HotspotRpcSer
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.OpenHotspotInBrowserParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.AddIssueCommentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.IssueRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.IdeLabsRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.JoinIdeLabsProgramParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.remediation.aicodefix.AiCodeFixRpcService;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.remediation.aicodefix.SuggestFixParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyRiskStatusParams;
@@ -77,7 +83,8 @@ class BackendServiceTests {
   BindingRpcService bindingRpcService = mock(BindingRpcService.class);
   ConnectionRpcService connectionRpcService = mock(ConnectionRpcService.class);
   IssueRpcService issueService = mock(IssueRpcService.class);
-  AiAssistedIdeRpcService aiAssistedIdeRpcService = mock(AiAssistedIdeRpcService.class);
+  AiAgentRpcService aiAgentService = mock(AiAgentRpcService.class);
+  IdeLabsRpcService ideLabsRpcService = mock(IdeLabsRpcService.class);
   static LanguageClientLogger lsLogOutput = mock(LanguageClientLogger.class);
   static SonarLintExtendedLanguageClient client = mock(SonarLintExtendedLanguageClient.class);
   static BackendService underTest = new BackendService(backend, lsLogOutput, client);
@@ -95,7 +102,8 @@ class BackendServiceTests {
     when(backend.getBindingService()).thenReturn(bindingRpcService);
     when(backend.getConnectionService()).thenReturn(connectionRpcService);
     when(backend.getIssueService()).thenReturn(issueService);
-    when(backend.getAiAssistedIdeRpcService()).thenReturn(aiAssistedIdeRpcService);
+    when(backend.getAiAgentService()).thenReturn(aiAgentService);
+    when(backend.getIdeLabsService()).thenReturn(ideLabsRpcService);
   }
 
   @Test
@@ -277,13 +285,49 @@ class BackendServiceTests {
 
   @Test
   void shouldForwardMCPRuleFileRequestToBackend() {
-    var aiAssistedIde = AiAssistedIde.CURSOR;
+    var aiAgent = AiAgent.CURSOR;
 
     var argumentCaptor = ArgumentCaptor.forClass(GetRuleFileContentParams.class);
 
-    underTest.getMCPRuleFileContent(new GetRuleFileContentParams(aiAssistedIde));
+    underTest.getMCPRuleFileContent(new GetRuleFileContentParams(aiAgent));
 
-    verify(aiAssistedIdeRpcService).getRuleFileContent(argumentCaptor.capture());
-    assertThat(argumentCaptor.getValue().getIde()).isEqualTo(aiAssistedIde);
+    verify(aiAgentService).getRuleFileContent(argumentCaptor.capture());
+    assertThat(argumentCaptor.getValue().getAiAgent()).isEqualTo(aiAgent);
+  }
+
+  @Test
+  void shouldForwardLabsSubscriptionRequestToBackend() {
+    var email = "example@example.com";
+    var ideName = "Visual Studio Code";
+
+    var argumentCaptor = ArgumentCaptor.forClass(JoinIdeLabsProgramParams.class);
+
+    underTest.joinIdeLabsProgram(email, ideName);
+
+    verify(ideLabsRpcService).joinIdeLabsProgram(argumentCaptor.capture());
+    assertThat(argumentCaptor.getValue().getEmail()).isEqualTo(email);
+    assertThat(argumentCaptor.getValue().getIde()).isEqualTo("vscode");
+  }
+
+  @ParameterizedTest
+  @MethodSource("ideSourceProvider")
+  void shouldCorrectlyDetermineSourceIdeForLabsProgram(String appName, String expectedSource) {
+    var sourceIde = BackendService.determineIdeLabsSourceIde(appName);
+
+    assertThat(sourceIde).isEqualTo(expectedSource);
+  }
+
+  private static Stream<Arguments> ideSourceProvider() {
+    return Stream.of(
+      Arguments.of("Visual Studio Code", "vscode"),
+      Arguments.of("Some Unknown IDE", "vscode"),
+      Arguments.of("Cursor", "cursor"),
+      Arguments.of("Visual Studio Code Insiders", "vscode"),
+      Arguments.of("VSCodium", "codium"),
+      Arguments.of("Windsurf", "windsurf"),
+      Arguments.of("Windsurf EU", "windsurf"),
+      Arguments.of("Cursor Insider", "cursor"),
+      Arguments.of("Kiro", "kiro"),
+      Arguments.of("Devin", "devin"));
   }
 }

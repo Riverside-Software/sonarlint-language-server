@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2025 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource Sàrl
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -42,6 +42,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.GetMCPServ
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.GetMCPServerConfigurationResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.auth.HelpGenerateUserTokenResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.connection.org.OrganizationDto;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.JoinIdeLabsProgramParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.JoinIdeLabsProgramResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyRiskStatusParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
@@ -714,7 +716,7 @@ public interface SonarLintExtendedLanguageServer extends LanguageServer {
   CompletableFuture<GetMCPServerConfigurationResponse> getMCPServerConfiguration(GetMCPServerConfigurationParams params);
 
   @JsonRequest("sonarlint/getMCPRuleFileContent")
-  CompletableFuture<GetRuleFileContentResponse> getMCPRuleFileContent(String aiAssistedIde);
+  CompletableFuture<GetRuleFileContentResponse> getMCPRuleFileContent(String aiAgent);
 
   enum BindingCreationMode {
     AUTOMATIC,
@@ -742,4 +744,7 @@ public interface SonarLintExtendedLanguageServer extends LanguageServer {
 
   @JsonNotification("sonarlint/dumpThreads")
   void dumpThreads();
+
+  @JsonRequest("sonarlint/joinIdeLabsProgram")
+  CompletableFuture<JoinIdeLabsProgramResponse> joinIdeLabsProgram(JoinIdeLabsProgramParams params);
 }

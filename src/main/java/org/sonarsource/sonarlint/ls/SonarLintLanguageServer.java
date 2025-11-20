@@ -1,6 +1,6 @@
 /*
  * SonarLint Language Server
- * Copyright (C) 2009-2025 SonarSource SA
+ * Copyright (C) 2009-2025 SonarSource Sàrl
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -87,7 +87,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.NotebookDocumentService;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAssistedIde;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgent;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetRuleFileContentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetRuleFileContentResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.GetSupportedFilePatternsParams;
@@ -108,6 +108,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.CheckStatusCh
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.HotspotStatus;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.OpenHotspotInBrowserParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.AddIssueCommentParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.JoinIdeLabsProgramParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.JoinIdeLabsProgramResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyRiskStatusParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
@@ -691,12 +693,12 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public CompletableFuture<GetRuleFileContentResponse> getMCPRuleFileContent(String clientProvidedIde) {
     try {
-      var aiAssistedIde = AiAssistedIde.valueOf(clientProvidedIde.toUpperCase(Locale.US));
-      var params = new GetRuleFileContentParams(aiAssistedIde);
+      var aiAgent = AiAgent.valueOf(clientProvidedIde.toUpperCase(Locale.US));
+      var params = new GetRuleFileContentParams(aiAgent);
       return backendServiceFacade.getBackendService().getMCPRuleFileContent(params);
     } catch (IllegalArgumentException e) {
-      client.showMessage(new MessageParams(MessageType.Warning, "Rule file creation is not yet supported for IDE '" + clientProvidedIde + "'."));
-      throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InvalidParams, "Unsupported IDE: " + clientProvidedIde, e));
+      client.showMessage(new MessageParams(MessageType.Warning, "Rule file creation is not yet supported for AI agent '" + clientProvidedIde + "'."));
+      throw new ResponseErrorException(new ResponseError(ResponseErrorCode.InvalidParams, "Unsupported AI agent: " + clientProvidedIde, e));
     }
   }
 
@@ -1057,5 +1059,10 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public void dumpThreads() {
     backendServiceFacade.getBackendService().dumpThreads();
+  }
+
+  @Override
+  public CompletableFuture<JoinIdeLabsProgramResponse> joinIdeLabsProgram(JoinIdeLabsProgramParams params) {
+    return backendServiceFacade.getBackendService().joinIdeLabsProgram(params.getEmail(), params.getIde());
   }
 }
