@@ -606,7 +606,12 @@ public abstract class AbstractLanguageServerMediumTests {
     }
 
     @Override
-    public CompletableFuture<Boolean> canShowMissingRequirementsNotification() {
+    public CompletableFuture<MissingRequirementsNotificationDisplayOption> canShowMissingRequirementsNotification() {
+      return CompletableFuture.completedFuture(MissingRequirementsNotificationDisplayOption.DO_NOT_SHOW_AGAIN);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> hasJoinedIdeLabs() {
       return CompletableFuture.completedFuture(false);
     }
 

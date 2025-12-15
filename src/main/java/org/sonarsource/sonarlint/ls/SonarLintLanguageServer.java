@@ -115,6 +115,7 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.labs.JoinIdeLabsProgr
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyRiskStatusParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AcceptedBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FixSuggestionStatus;
 import org.sonarsource.sonarlint.ls.SonarLintExtendedLanguageClient.ConnectionCheckResult;
@@ -207,6 +208,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
 
     var input = new ExitingInputStream(inputStream, this);
     var launcher = new Launcher.Builder<SonarLintExtendedLanguageClient>()
+      .configureGson(configureGson -> configureGson.registerTypeAdapter(SonarLintExtendedLanguageClient.MissingRequirementsNotificationDisplayOption.class,
+        new MissingRequirementsNotificationDisplayOptionDeserializer()))
       .setLocalService(this)
       .setRemoteInterface(SonarLintExtendedLanguageClient.class)
       .setInput(input)
@@ -860,12 +863,15 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   }
 
   @Override
-  public void didCreateBinding(BindingCreationMode creationMode) {
-    switch (creationMode) {
-      case AUTOMATIC -> telemetry.addedAutomaticBindings();
-      case IMPORTED -> telemetry.addedImportedBindings();
-      case MANUAL -> telemetry.addedManualBindings();
-    }
+  public void addedManualBindings() {
+    backendServiceFacade.getBackendService().getTelemetryService()
+      .addedManualBindings();
+  }
+
+  @Override
+  public void acceptedBindingSuggestion(AcceptedBindingSuggestionParams params) {
+    backendServiceFacade.getBackendService().getTelemetryService()
+      .acceptedBindingSuggestion(params);
   }
 
   @Override
@@ -1083,5 +1089,15 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public CompletableFuture<JoinIdeLabsProgramResponse> joinIdeLabsProgram(JoinIdeLabsProgramParams params) {
     return backendServiceFacade.getBackendService().joinIdeLabsProgram(params.getEmail(), params.getIde());
+  }
+
+  @Override
+  public void labsExternalLinkClicked(String linkId) {
+    telemetry.labsExternalLinkClicked(linkId);
+  }
+
+  @Override
+  public void labsFeedbackLinkClicked(String featureId) {
+    telemetry.labsFeedbackLinkClicked(featureId);
   }
 }

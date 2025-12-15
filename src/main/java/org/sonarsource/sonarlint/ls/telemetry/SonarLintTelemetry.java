@@ -22,6 +22,7 @@ package org.sonarsource.sonarlint.ls.telemetry;
 import java.util.function.Consumer;
 import javax.annotation.CheckForNull;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.telemetry.TelemetryRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AcceptedBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AddQuickFixAppliedForRuleParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AnalysisReportingTriggeredParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AnalysisReportingType;
@@ -29,6 +30,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.DevNotificat
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FixSuggestionResolvedParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.HelpAndFeedbackClickedParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.IdeLabsExternalLinkClickedParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.IdeLabsFeedbackLinkClickedParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.ToolCalledParams;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
@@ -105,16 +108,12 @@ public class SonarLintTelemetry implements WorkspaceSettingsChangeListener {
     actIfEnabled(telemetryRpcService -> telemetryRpcService.toolCalled(new ToolCalledParams(toolName, success)));
   }
 
-  public void addedAutomaticBindings() {
-    actIfEnabled(TelemetryRpcService::addedAutomaticBindings);
-  }
-
-  public void addedImportedBindings() {
-    actIfEnabled(TelemetryRpcService::addedImportedBindings);
-  }
-
   public void addedManualBindings() {
     actIfEnabled(TelemetryRpcService::addedManualBindings);
+  }
+
+  public void acceptedBindingSuggestion(AcceptedBindingSuggestionParams params) {
+    actIfEnabled(telemetryRpcService -> telemetryRpcService.acceptedBindingSuggestion(params));
   }
 
   public void fixSuggestionResolved(FixSuggestionResolvedParams params) {
@@ -136,6 +135,14 @@ public class SonarLintTelemetry implements WorkspaceSettingsChangeListener {
 
   public void currentFileAnalysisTriggered() {
     actIfEnabled(telemetryRpcService -> telemetryRpcService.analysisReportingTriggered(new AnalysisReportingTriggeredParams(AnalysisReportingType.CURRENT_FILE_ANALYSIS_TYPE)));
+  }
+
+  public void labsExternalLinkClicked(String linkId) {
+    actIfEnabled(telemetryRpcService -> telemetryRpcService.ideLabsExternalLinkClicked(new IdeLabsExternalLinkClickedParams(linkId)));
+  }
+
+  public void labsFeedbackLinkClicked(String featureId) {
+    actIfEnabled(telemetryRpcService -> telemetryRpcService.ideLabsFeedbackLinkClicked(new IdeLabsFeedbackLinkClickedParams(featureId)));
   }
 
   private void actIfEnabled(Consumer<TelemetryRpcService> action) {

@@ -66,6 +66,8 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingSuggestionOrigin;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AcceptedBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttribute;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttributeCategory;
@@ -218,10 +220,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
         tuple(7, 15, 7, 39, CLOUDFORMATION_S6273,
-          "sonarqube", "Rename tag key \"anycompany:cost-center\" to match the regular expression \"^([A-Z][A-Za-z]*:)*([A-Z][A-Za-z]*)$\".",
-          DiagnosticSeverity.Warning),
-        tuple(9, 15, 9, 43, CLOUDFORMATION_S6273, "sonarqube",
-          "Rename tag key \"anycompany:EnvironmentType\" to match the regular expression \"^([A-Z][A-Za-z]*:)*([A-Z][A-Za-z]*)$\".",
+          "sonarqube", "Rename tag key \"anycompany:cost-center\" to match the regular expression \"^(([^:]++:)*+([A-Z][A-Za-z]*+))$\".",
           DiagnosticSeverity.Warning)));
   }
 
@@ -262,7 +261,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
         tuple(4, 4, 4, 28, TERRAFORM_S6273, "sonarqube",
-          "Rename tag key \"anycompany:cost-center\" to match the regular expression \"^([A-Z][A-Za-z]*:)*([A-Z][A-Za-z]*)$\".", DiagnosticSeverity.Warning)));
+          "Rename tag key \"anycompany:cost-center\" to match the regular expression \"^(([^:]++:)*+([A-Z][A-Za-z]*+))$\".", DiagnosticSeverity.Warning)));
   }
 
   @Test
@@ -607,7 +606,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
 
     waitForLogToContain(
       String.format(
-        "Global settings updated: WorkspaceSettings[analysisExcludes=,automaticAnalysis=true,connections={%s=ServerConnectionSettings[connectionId=%s,disableNotifications=false,organizationKey=<null>,region=<null>,serverUrl=%s]},disableTelemetry=false,excludedRules=[],focusOnNewCode=false,includedRules=[],pathToNodeExecutable=<null>,ruleParameters={},showVerboseLogs=true]",
+        "Global settings updated: WorkspaceSettings[analysisExcludes=,automaticAnalysis=true,connections={%s=ServerConnectionSettings[connectionId=%s,disableNotifications=false,organizationKey=<null>,region=<null>,serverUrl=%s]},disableTelemetry=false,excludedRules=[],focusOnNewCode=false,ideLabsEnabled=false,includedRules=[],pathToNodeExecutable=<null>,ruleParameters={},showVerboseLogs=true]",
         CONNECTION_ID, CONNECTION_ID, mockWebServerExtension.url("/")));
     // We are using the global system property to disable telemetry in tests, so this assertion do not pass
     // assertLogContainsInOrder( "Telemetry enabled");
@@ -810,7 +809,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
       .contains(
         "[Info] [sonarlint : sonarlint-analysis-scheduler] Index files",
         "[Info] [sonarlint : Report about progress of file indexation] 1 file indexed",
-        "[Info] [org.sonarsource.analyzer.commons.ProgressReport : rules execution progress] 1 source file to be analyzed",
+        "[Info] [org.sonar.plugins.python.MultiFileProgressReport : rules execution] 1 source file to be analyzed",
         "[Info] [sonarlint : sonarlint-analysis-scheduler] Analysis detected 1 issue and 0 Security Hotspots in XXXms"));
   }
 
@@ -1159,6 +1158,20 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
   void tool_called() {
     // this is just to fix the coverage. A better test should be put in place, see SLLS-340
     assertThatCode(() -> lsProxy.lmToolCalled(new SonarLintExtendedLanguageServer.LMToolCalledParams("name", true)))
+      .doesNotThrowAnyException();
+  }
+
+  @Test
+  void added_manual_binding() {
+    // this is just to fix the coverage. A better test should be put in place, see SLLS-340
+    assertThatCode(() -> lsProxy.addedManualBindings())
+      .doesNotThrowAnyException();
+  }
+
+  @Test
+  void accepted_binding_suggestion() {
+    // this is just to fix the coverage. A better test should be put in place, see SLLS-340
+    assertThatCode(() -> lsProxy.acceptedBindingSuggestion(new AcceptedBindingSuggestionParams(BindingSuggestionOrigin.PROJECT_NAME)))
       .doesNotThrowAnyException();
   }
 

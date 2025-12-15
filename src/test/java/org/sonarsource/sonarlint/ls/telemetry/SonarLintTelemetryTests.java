@@ -27,8 +27,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.ArgumentCaptor;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingSuggestionOrigin;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.telemetry.GetStatusResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.telemetry.TelemetryRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AcceptedBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AddQuickFixAppliedForRuleParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AnalysisReportingTriggeredParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AnalysisReportingType;
@@ -37,6 +39,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilt
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FixSuggestionResolvedParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FixSuggestionStatus;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.HelpAndFeedbackClickedParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.IdeLabsExternalLinkClickedParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.IdeLabsFeedbackLinkClickedParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.ToolCalledParams;
 import org.sonarsource.sonarlint.ls.backend.BackendService;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
@@ -231,36 +235,6 @@ class SonarLintTelemetryTests {
   }
 
   @Test
-  void addedAutomaticBindings_when_enabled() {
-    telemetry.addedAutomaticBindings();
-
-    verify(telemetryService).addedAutomaticBindings();
-  }
-
-  @Test
-  void addedAutomaticBindings_when_disabled() {
-    System.setProperty(SonarLintTelemetry.DISABLE_PROPERTY_KEY, "true");
-    telemetry.addedAutomaticBindings();
-
-    verify(telemetryService, never()).addedAutomaticBindings();
-  }
-
-  @Test
-  void addedImportedBindings_when_enabled() {
-    telemetry.addedImportedBindings();
-
-    verify(telemetryService).addedImportedBindings();
-  }
-
-  @Test
-  void addedImportedBindings_when_disabled() {
-    System.setProperty(SonarLintTelemetry.DISABLE_PROPERTY_KEY, "true");
-    telemetry.addedImportedBindings();
-
-    verify(telemetryService, never()).addedImportedBindings();
-  }
-
-  @Test
   void addedManualBindings_when_enabled() {
     telemetry.addedManualBindings();
 
@@ -273,6 +247,23 @@ class SonarLintTelemetryTests {
     telemetry.addedManualBindings();
 
     verify(telemetryService, never()).addedManualBindings();
+  }
+
+  @Test
+  void acceptedBindingSuggestion_when_enabled() {
+    var params = new AcceptedBindingSuggestionParams(BindingSuggestionOrigin.PROJECT_NAME);
+
+    telemetry.acceptedBindingSuggestion(params);
+
+    verify(telemetryService).acceptedBindingSuggestion(params);
+  }
+
+  @Test
+  void acceptedBindingSuggestion_when_disabled() {
+    System.setProperty(SonarLintTelemetry.DISABLE_PROPERTY_KEY, "true");
+    telemetry.acceptedBindingSuggestion(new AcceptedBindingSuggestionParams(BindingSuggestionOrigin.PROJECT_NAME));
+
+    verify(telemetryService, never()).acceptedBindingSuggestion(any());
   }
 
   @Test
@@ -330,8 +321,46 @@ class SonarLintTelemetryTests {
     verify(telemetryService, never()).analysisReportingTriggered(any());
   }
 
+  @Test
+  void labsLinkClicked_when_enabled() {
+    var argument = ArgumentCaptor.forClass(IdeLabsExternalLinkClickedParams.class);
+
+    telemetry.labsExternalLinkClicked("feature_documentation");
+
+    verify(telemetryService).ideLabsExternalLinkClicked(argument.capture());
+    assertThat(argument.getValue().getLinkId()).isEqualTo("feature_documentation");
+  }
+
+  @Test
+  void labsLinkClicked_when_disabled() {
+    System.setProperty(SonarLintTelemetry.DISABLE_PROPERTY_KEY, "true");
+
+    telemetry.labsExternalLinkClicked("feature_documentation");
+
+    verify(telemetryService, never()).ideLabsExternalLinkClicked(any());
+  }
+
+  @Test
+  void labsFeedbackLinkClicked_when_enabled() {
+    var argument = ArgumentCaptor.forClass(IdeLabsFeedbackLinkClickedParams.class);
+
+    telemetry.labsFeedbackLinkClicked("first_feature");
+
+    verify(telemetryService).ideLabsFeedbackLinkClicked(argument.capture());
+    assertThat(argument.getValue().getFeatureId()).isEqualTo("first_feature");
+  }
+
+  @Test
+  void labsFeedbackLinkClicked_when_disabled() {
+    System.setProperty(SonarLintTelemetry.DISABLE_PROPERTY_KEY, "true");
+
+    telemetry.labsFeedbackLinkClicked("first_feature");
+
+    verify(telemetryService, never()).ideLabsFeedbackLinkClicked(any());
+  }
+
   private static WorkspaceSettings newWorkspaceSettingsWithTelemetrySetting(boolean disableTelemetry) {
     return new WorkspaceSettings(disableTelemetry, Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(),
-      Collections.emptyMap(), false, "/path/to/node", false, true, "");
+      Collections.emptyMap(), false, "/path/to/node", false, true, "", false);
   }
 }
