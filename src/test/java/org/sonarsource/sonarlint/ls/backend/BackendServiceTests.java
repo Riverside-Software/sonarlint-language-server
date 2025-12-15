@@ -38,8 +38,10 @@ import org.sonarsource.sonarlint.core.issue.IssueNotFoundException;
 import org.sonarsource.sonarlint.core.rpc.protocol.SonarLintRpcServer;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgent;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgentRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetHookScriptContentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetRuleFileContentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalysisRpcService;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalyzeVCSChangedFilesParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeAutomaticAnalysisSettingParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.BindingRpcService;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetSharedConnectedModeConfigFileParams;
@@ -85,6 +87,7 @@ class BackendServiceTests {
   IssueRpcService issueService = mock(IssueRpcService.class);
   AiAgentRpcService aiAgentService = mock(AiAgentRpcService.class);
   IdeLabsRpcService ideLabsRpcService = mock(IdeLabsRpcService.class);
+  AnalysisRpcService analysisRpcService = mock(AnalysisRpcService.class);
   static LanguageClientLogger lsLogOutput = mock(LanguageClientLogger.class);
   static SonarLintExtendedLanguageClient client = mock(SonarLintExtendedLanguageClient.class);
   static BackendService underTest = new BackendService(backend, lsLogOutput, client);
@@ -269,6 +272,18 @@ class BackendServiceTests {
   }
 
   @Test
+  void shouldForwardAnalyzeVCSChangedFilesRequestToBackend() {
+    when(backend.getAnalysisService()).thenReturn(analysisRpcService);
+    var configScopeId = "configScopeId";
+    var argumentCaptor = ArgumentCaptor.forClass(AnalyzeVCSChangedFilesParams.class);
+
+    underTest.analyzeVCSChangedFiles(configScopeId);
+
+    verify(analysisRpcService).analyzeVCSChangedFiles(argumentCaptor.capture());
+    assertThat(argumentCaptor.getValue().getConfigScopeId()).isEqualTo(configScopeId);
+  }
+
+  @Test
   void shouldForwardMCPServerConfigurationRequestToBackend() {
     var connectionId = "connectionId";
     var token = "token";
@@ -292,6 +307,18 @@ class BackendServiceTests {
     underTest.getMCPRuleFileContent(new GetRuleFileContentParams(aiAgent));
 
     verify(aiAgentService).getRuleFileContent(argumentCaptor.capture());
+    assertThat(argumentCaptor.getValue().getAiAgent()).isEqualTo(aiAgent);
+  }
+
+  @Test
+  void shouldForwardAiAgentHookScriptRequestToBackend() {
+    var aiAgent = AiAgent.WINDSURF;
+
+    var argumentCaptor = ArgumentCaptor.forClass(GetHookScriptContentParams.class);
+
+    underTest.getAiAgentHookScriptContent(new GetHookScriptContentParams(aiAgent));
+
+    verify(aiAgentService).getHookScriptContent(argumentCaptor.capture());
     assertThat(argumentCaptor.getValue().getAiAgent()).isEqualTo(aiAgent);
   }
 
