@@ -1178,6 +1178,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
   @Override
   protected void setUpFolderSettings(Map<String, Map<String, Object>> folderSettings) {
     addSonarQubeConnection(client.globalSettings, CONNECTION_ID, mockWebServerExtension.url("/"), TOKEN);
+    folderSettings.put(analysisDir.toUri().toString(), new HashMap<>());
   }
 
   private Predicate<? super MessageParams> notFromContextualTSserver() {
