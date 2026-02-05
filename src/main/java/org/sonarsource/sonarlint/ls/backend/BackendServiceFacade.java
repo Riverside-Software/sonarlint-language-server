@@ -69,11 +69,12 @@ import org.sonarsource.sonarlint.ls.telemetry.SonarLintTelemetry;
 
 public class BackendServiceFacade {
 
-  public static final String MONITORING_DISABLED_PROPERTY_KEY = "sonarlint.monitoring.disabled";
+  public static final String MONITORING_ENABLED_PROPERTY_KEY = "sonarlint.monitoring.enabled";
   public static final String FLIGHT_RECORDER_ENABLED_PROPERTY_KEY = "sonarlint.flightrecorder.enabled";
 
   private static final String CURSOR_APP_NAME = "Cursor";
   private static final String WINDSURF_APP_NAME = "Windsurf";
+  private static final String KIRO_APP_NAME = "Kiro";
   private static final String VSCODE_APP_NAME = "Visual Studio Code";
 
   private final BackendService backendService;
@@ -163,6 +164,9 @@ public class BackendServiceFacade {
     if (appName.toLowerCase(Locale.ROOT).contains(WINDSURF_APP_NAME.toLowerCase(Locale.ROOT))) {
       return WINDSURF_APP_NAME;
     }
+    if (appName.toLowerCase(Locale.ROOT).contains(KIRO_APP_NAME.toLowerCase(Locale.ROOT))) {
+      return KIRO_APP_NAME;
+    }
     return VSCODE_APP_NAME;
   }
 
@@ -173,6 +177,9 @@ public class BackendServiceFacade {
     if (appName.toLowerCase(Locale.ROOT).contains(WINDSURF_APP_NAME.toLowerCase(Locale.ROOT))) {
       return WINDSURF_APP_NAME.toLowerCase(Locale.ROOT);
     }
+    if (appName.toLowerCase(Locale.ROOT).contains(KIRO_APP_NAME.toLowerCase(Locale.ROOT))) {
+      return KIRO_APP_NAME.toLowerCase(Locale.ROOT);
+    }
     return clientProductKey;
   }
 
@@ -181,7 +188,7 @@ public class BackendServiceFacade {
     var backendCapabilities = EnumSet.of(BackendCapability.SMART_NOTIFICATIONS, BackendCapability.PROJECT_SYNCHRONIZATION,
       BackendCapability.EMBEDDED_SERVER, BackendCapability.SERVER_SENT_EVENTS, BackendCapability.DATAFLOW_BUG_DETECTION,
       BackendCapability.FULL_SYNCHRONIZATION, BackendCapability.SECURITY_HOTSPOTS, BackendCapability.ISSUE_STREAMING,
-      BackendCapability.SCA_SYNCHRONIZATION, BackendCapability.CONTEXT_GENERATION, BackendCapability.GESSIE_TELEMETRY);
+      BackendCapability.SCA_SYNCHRONIZATION, BackendCapability.CONTEXT_GENERATION, BackendCapability.GESSIE_TELEMETRY, BackendCapability.PROMOTIONAL_CAMPAIGNS);
     if (telemetry != null && telemetry.enabled()) {
       backendCapabilities.add(BackendCapability.TELEMETRY);
     }
@@ -195,11 +202,11 @@ public class BackendServiceFacade {
   }
 
   boolean shouldEnableMonitoring() {
-    var monitoringDisabledByProperty = "true".equals(System.getProperty(MONITORING_DISABLED_PROPERTY_KEY));
-    if (monitoringDisabledByProperty) {
-      lsLogOutput.debug("Monitoring is disabled by system property");
+    var monitoringEnabledByProperty = "true".equals(System.getProperty(MONITORING_ENABLED_PROPERTY_KEY));
+    if (!monitoringEnabledByProperty) {
+      lsLogOutput.debug("Monitoring is not enabled by system property");
     }
-    return !monitoringDisabledByProperty;
+    return monitoringEnabledByProperty;
   }
 
   boolean shouldEnableFlightRecorder() {
