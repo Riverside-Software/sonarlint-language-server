@@ -1057,12 +1057,6 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
   @JsonNotification("notifyInvalidToken")
   void notifyInvalidToken(NotifyInvalidTokenParams params);
 
-  record FlightRecorderStartedParams(String sessionId) {
-  }
-
-  @JsonNotification("flightRecorderStarted")
-  void flightRecorderStarted(FlightRecorderStartedParams params);
-
   @JsonNotification("embeddedServerStarted")
   void embeddedServerStarted(EmbeddedServerStartedParams params);
 }

@@ -111,6 +111,7 @@ import org.sonarsource.sonarlint.ls.telemetry.SonarLintTelemetry;
 import picocli.CommandLine;
 import testutils.LogTestStartAndEnd;
 
+import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -396,13 +397,6 @@ public abstract class AbstractLanguageServerMediumTests {
     final Set<String> openedLinks = new HashSet<>();
     final Set<MessageParams> shownMessages = new HashSet<>();
     final Map<String, NewCodeDefinitionDto> newCodeDefinitionCache = new HashMap<>();
-    final Set<String> flightRecorderSessionIds = new HashSet<>();
-
-    void clearHotspotsAndIssuesAndConfigScopeReadiness() {
-      scopeReadyForAnalysis.clear();
-      diagnostics.clear();
-      hotspots.clear();
-    }
 
     void clear() {
       diagnostics.clear();
@@ -419,9 +413,9 @@ public abstract class AbstractLanguageServerMediumTests {
       shouldAnalyseFile = true;
       scopeReadyForAnalysis.clear();
       suggestedBindings = null;
+      ruleDesc = null;
       isOpenInEditor = true;
       openedLinks.clear();
-      flightRecorderSessionIds.clear();
     }
 
     @Override
@@ -553,11 +547,6 @@ public abstract class AbstractLanguageServerMediumTests {
 
     @Override
     public void notifyInvalidToken(NotifyInvalidTokenParams params) {
-    }
-
-    @Override
-    public void flightRecorderStarted(FlightRecorderStartedParams params) {
-      flightRecorderSessionIds.add(params.sessionId());
     }
 
     @Override
@@ -868,7 +857,7 @@ public abstract class AbstractLanguageServerMediumTests {
   }
 
   protected static void awaitUntilAsserted(ThrowingRunnable assertion) {
-    await().atMost(15, SECONDS).untilAsserted(assertion);
+    await().atMost(1, MINUTES).untilAsserted(assertion);
   }
 
   protected Map<String, Object> getFolderSettings(String folderUri) {
