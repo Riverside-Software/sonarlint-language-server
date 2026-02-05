@@ -380,7 +380,6 @@ public abstract class AbstractLanguageServerMediumTests {
     Map<String, GetJavaConfigResponse> javaConfigs = new HashMap<>();
     Map<String, GetOpenEdgeConfigResponse> oeConfigs = new HashMap<>();
     Map<String, String> referenceBranchNameByFolder = new HashMap<>();
-    Map<String, Boolean> scopeReadyForAnalysis = new HashMap<>();
     CountDownLatch settingsAppliedLatch = new CountDownLatch(0);
     CountDownLatch showRuleDescriptionLatch = new CountDownLatch(0);
     CountDownLatch suggestBindingLatch = new CountDownLatch(0);
@@ -411,11 +410,11 @@ public abstract class AbstractLanguageServerMediumTests {
       suggestBindingLatch = new CountDownLatch(0);
       needCompilationDatabaseCalls.set(0);
       shouldAnalyseFile = true;
-      scopeReadyForAnalysis.clear();
       suggestedBindings = null;
       ruleDesc = null;
       isOpenInEditor = true;
       openedLinks.clear();
+      newCodeDefinitionCache.clear();
     }
 
     @Override

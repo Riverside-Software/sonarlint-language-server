@@ -123,12 +123,6 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
       "additionalAttributes", Map.of(
         "extra", "value"),
       "omnisharpDirectory", omnisharpDir.toString()), new WorkspaceFolder(analysisDir.toUri().toString(), "AnalysisDir"));
-
-    var vcsChangedAnalysisFileName = "analyzeVCSChangedFiles.py";
-    var vcsChangedFile = new SonarLintExtendedLanguageClient.FoundFileDto(vcsChangedAnalysisFileName, analysisDir.resolve(vcsChangedAnalysisFileName).toFile().getAbsolutePath(),
-      "def foo():\n  toto = 0\n");
-
-    setUpFindFilesInFolderResponse(analysisDir.toUri().toString(), List.of(vcsChangedFile));
   }
 
   @BeforeEach
@@ -1124,18 +1118,22 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void analyzeVCSChangedFiles() throws Exception {
-    // Initialize git repository
-    try (var gitRepo = Git.init().setDirectory(analysisDir.toFile()).call()) {
-      // Create initial commit to properly establish the git repository
-      gitRepo.commit().setMessage("Initial commit").setAllowEmpty(true).call();
+    var folder = makeStaticTempDir();
+    var vcsChangedAnalysisFileName = "analyzeVCSChangedFiles.py";
+    var vcsChangedFile = new SonarLintExtendedLanguageClient.FoundFileDto(vcsChangedAnalysisFileName, folder.resolve(vcsChangedAnalysisFileName).toFile().getAbsolutePath(),
+      "def foo():\n  toto = 0\n");
 
-      // Create one untracked file with an issue inside
+    setUpFindFilesInFolderResponse(folder.toUri().toString(), List.of(vcsChangedFile));
+    addFolder(folder.toUri().toString(), "VCS Folder");
+
+    // Initialize git repository
+    try (var gitRepo = Git.init().setDirectory(folder.toFile()).call()) {
       var fileName = "analyzeVCSChangedFiles.py";
-      var fileUri = analysisDir.resolve(fileName);
+      var fileUri = folder.resolve(fileName);
       Files.createFile(fileUri);
       Files.writeString(fileUri, "def foo():\n toto = 0\n");
 
-      lsProxy.analyzeVCSChangedFiles(new SonarLintExtendedLanguageServer.AnalyzeVCSChangedFilesParams(List.of(analysisDir.toUri().toString())));
+      lsProxy.analyzeVCSChangedFiles(new SonarLintExtendedLanguageServer.AnalyzeVCSChangedFilesParams(List.of(folder.toUri().toString())));
 
       awaitUntilAsserted(() -> assertThat(client.getDiagnostics(fileUri.toUri().toString()))
         .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage,
