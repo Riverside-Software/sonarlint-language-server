@@ -72,8 +72,6 @@ public class LanguageClientLogger implements WorkspaceSettingsChangeListener {
   }
 
   public void log(String formattedMessage, LogLevel level) {
-    if (level == LogLevel.TRACE)
-      return;
     log(getLogPrefix(level), formattedMessage, isDebugOrTrace(level));
   }
 
@@ -145,7 +143,7 @@ public class LanguageClientLogger implements WorkspaceSettingsChangeListener {
   }
 
   public void trace(String formattedMessage) {
-    // Proparse generates too many TRACE messages, just skip them
+    log("Trace", formattedMessage, true);
   }
 
 }
