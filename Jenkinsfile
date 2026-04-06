@@ -12,7 +12,7 @@ pipeline {
       steps {
         checkout([$class: 'GitSCM', branches: scm.branches, extensions: scm.extensions + [[$class: 'CleanCheckout']], userRemoteConfigs: scm.userRemoteConfigs])
         script {
-          withEnv(["MVN_HOME=${tool name: 'Maven 3', type: 'maven'}", "JAVA_HOME=${tool name: 'JDK17', type: 'jdk'}"]) {
+          withEnv(["MVN_HOME=${tool name: 'Maven 3', type: 'maven'}", "JAVA_HOME=${tool name: 'JDK21', type: 'jdk'}"]) {
             sh "$MVN_HOME/bin/mvn -Dmaven.test.skip=true clean deploy"
           }
         }
