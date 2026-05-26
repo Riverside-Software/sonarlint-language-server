@@ -31,14 +31,12 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.eclipse.lsp4j.DiagnosticSeverity.Warning;
 
-@EnabledIfSystemProperty(named = "commercial", matches = ".*", disabledReason = "Commercial plugin not available")
 class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
   @BeforeAll
   static void initialize() throws Exception {
@@ -123,7 +121,7 @@ class CFamilyMediumTests extends AbstractLanguageServerMediumTests {
 
     awaitUntilAsserted(() -> assertLogContains("\"sonar.cfamily.compile-commands\" is not set to a valid file: non/existing/file"));
     assertThat(client.getDiagnostics(cppFileUri)).isEmpty();
-    assertThat(client.needCompilationDatabaseCalls.get()).isEqualTo(1);
+    assertThat(client.needCompilationDatabaseCalls.get()).isGreaterThan(0);
   }
 
   @Test

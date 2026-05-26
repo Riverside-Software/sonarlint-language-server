@@ -36,7 +36,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
-import org.apache.commons.lang3.ArrayUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.lsp4j.CodeActionContext;
@@ -107,12 +106,10 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
   public static final String DOCKER_S6476 = "docker:S6476";
   public static final String TERRAFORM_S6273 = "terraform:S6273";
   public static final String ARM_S4423 = "azureresourcemanager:S4423";
-  private static Path omnisharpDir;
   private static Path analysisDir;
 
   @BeforeAll
   static void initialize() throws Exception {
-    omnisharpDir = makeStaticTempDir();
     analysisDir = makeStaticTempDir();
     initialize(Map.of(
       "telemetryStorage", "not/exists",
@@ -121,8 +118,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
       "showVerboseLogs", false,
       "productKey", "productKey",
       "additionalAttributes", Map.of(
-        "extra", "value"),
-      "omnisharpDirectory", omnisharpDir.toString()), new WorkspaceFolder(analysisDir.toUri().toString(), "AnalysisDir"));
+        "extra", "value")), new WorkspaceFolder(analysisDir.toUri().toString(), "AnalysisDir"));
   }
 
   @BeforeEach
@@ -505,7 +501,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> assertThat(client.getDiagnostics(uri))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 0, 0, 4, "css:S4658", "sonarqube", "Unexpected empty block", DiagnosticSeverity.Warning)));
+        tuple(0, 2, 0, 4, "css:S4658", "sonarqube", "Unexpected empty block", DiagnosticSeverity.Warning)));
   }
 
   @Test
@@ -658,7 +654,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
     assertThat(client.ruleDesc.getCleanCodeAttribute()).isEqualTo(EnumLabelsMapper.cleanCodeAttributeToLabel(CleanCodeAttribute.COMPLETE));
     assertThat(client.ruleDesc.getCleanCodeAttributeCategory()).isEqualTo(EnumLabelsMapper.cleanCodeAttributeCategoryToLabel(CleanCodeAttributeCategory.INTENTIONAL));
     assertThat(client.ruleDesc.getImpacts())
-      .containsExactly(Map.entry(EnumLabelsMapper.softwareQualityToLabel(SoftwareQuality.RELIABILITY), EnumLabelsMapper.impactSeverityToLabel(ImpactSeverity.HIGH)));
+      .containsExactly(Map.entry(EnumLabelsMapper.softwareQualityToLabel(SoftwareQuality.RELIABILITY), EnumLabelsMapper.impactSeverityToLabel(ImpactSeverity.BLOCKER)));
   }
 
   @Test
@@ -722,17 +718,11 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void testListAllRules() {
-    var result = lsProxy.listAllRules().join();
-    String[] commercialLanguages = new String[]{"C", "C++"};
-    String[] freeLanguages = new String[]{"AzureResourceManager", "CSS", "C#", "CloudFormation", "Docker", "Go", "HTML", "IPython Notebooks", "Java",
+    String[] languages = new String[]{"AzureResourceManager", "C", "C++", "CSS", "C#", "CloudFormation", "Docker", "Go", "HTML", "IPython Notebooks", "Java",
       "JavaScript", "Kubernetes", "PHP", "Python", "Secrets", "Terraform", "TypeScript", "XML"};
-    if (COMMERCIAL_ENABLED) {
-      awaitUntilAsserted(() -> assertThat(result).containsOnlyKeys(ArrayUtils.addAll(commercialLanguages, freeLanguages)));
-    } else {
-      awaitUntilAsserted(() -> assertThat(result).containsOnlyKeys(freeLanguages));
-    }
+    awaitUntilAsserted(() -> assertThat(lsProxy.listAllRules().join()).containsOnlyKeys(languages));
 
-    awaitUntilAsserted(() -> assertThat(result.get("HTML"))
+    awaitUntilAsserted(() -> assertThat(lsProxy.listAllRules().join().get("HTML"))
       .extracting(Rule::getKey, Rule::getName, Rule::isActiveByDefault)
       .contains(tuple("Web:PageWithoutTitleCheck", "\"<title>\" should be present in all pages", true)));
   }
