@@ -301,7 +301,7 @@
                   <overWrite>false</overWrite>
                   <outputDirectory>${project.build.directory}/plugins</outputDirectory>
                   <destFileName>sonarlintomnisharp.jar</destFileName>
-                </artifactItem>
+                </artifactItem> -->
               </artifactItems>
             </configuration>
           </execution>
