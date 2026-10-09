@@ -32,8 +32,17 @@ import org.eclipse.lsp4j.jsonrpc.services.JsonRequest;
 import org.eclipse.lsp4j.jsonrpc.util.Preconditions;
 import org.eclipse.lsp4j.jsonrpc.validation.NonNull;
 import org.eclipse.lsp4j.services.LanguageServer;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetAiIntegrationStateParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetAiIntegrationStateResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetHookScriptContentResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetRuleFileContentResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationInspectionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationInspectionResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationUpdateParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationUpdatePlanResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareAuthenticateCliCommandParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareCliCommandResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareIntegrateCliCommandParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.GetSupportedFilePatternsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetBindingSuggestionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.binding.GetSharedConnectedModeConfigFileParams;
@@ -50,6 +59,9 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.sca.ChangeDependencyR
 import org.sonarsource.sonarlint.core.rpc.protocol.client.binding.GetBindingSuggestionsResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.connection.GetConnectionSuggestionsParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AcceptedBindingSuggestionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiAgentIntegrationStateObservedParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiIntegrationActionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiIntegrationCliStateObservedParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
 
 public interface SonarLintExtendedLanguageServer extends LanguageServer {
@@ -723,6 +735,33 @@ public interface SonarLintExtendedLanguageServer extends LanguageServer {
 
   @JsonRequest("sonarlint/getMCPServerConfiguration")
   CompletableFuture<GetMCPServerConfigurationResponse> getMCPServerConfiguration(GetMCPServerConfigurationParams params);
+
+  @JsonRequest("sonarlint/getAiIntegrationState")
+  CompletableFuture<GetAiIntegrationStateResponse> getIntegrationState(GetAiIntegrationStateParams params);
+
+  @JsonNotification("sonarlint/aiIntegrationAction")
+  void aiIntegrationAction(AiIntegrationActionParams params);
+
+  @JsonNotification("sonarlint/aiIntegrationCliStateObserved")
+  void aiIntegrationCliStateObserved(AiIntegrationCliStateObservedParams params);
+
+  @JsonNotification("sonarlint/aiAgentIntegrationStateObserved")
+  void aiAgentIntegrationStateObserved(AiAgentIntegrationStateObservedParams params);
+
+  @JsonRequest("sonarlint/prepareInstallCliCommand")
+  CompletableFuture<PrepareCliCommandResponse> prepareInstallCliCommand();
+
+  @JsonRequest("sonarlint/prepareAuthenticateCliCommand")
+  CompletableFuture<PrepareCliCommandResponse> prepareAuthenticateCliCommand(PrepareAuthenticateCliCommandParams params);
+
+  @JsonRequest("sonarlint/prepareIntegrateCliCommand")
+  CompletableFuture<PrepareCliCommandResponse> prepareIntegrateCliCommand(PrepareIntegrateCliCommandParams params);
+
+  @JsonRequest("sonarlint/inspectMcpConfiguration")
+  CompletableFuture<McpConfigurationInspectionResponse> inspectMcpConfiguration(McpConfigurationInspectionParams params);
+
+  @JsonRequest("sonarlint/planMcpConfigurationUpdate")
+  CompletableFuture<McpConfigurationUpdatePlanResponse> planMcpConfigurationUpdate(McpConfigurationUpdateParams params);
 
   @JsonRequest("sonarlint/getMCPRuleFileContent")
   CompletableFuture<GetRuleFileContentResponse> getMCPRuleFileContent(String aiAgent);

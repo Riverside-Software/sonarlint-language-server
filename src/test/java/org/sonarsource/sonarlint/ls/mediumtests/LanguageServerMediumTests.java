@@ -65,8 +65,26 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgent;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgentDetectionSource;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiIntegrationHost;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiIntegrationScope;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.CliAuthenticationStatus;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.CliInstallationStatus;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetAiIntegrationStateParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationInspectionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationState;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationUpdateParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareAuthenticateCliCommandParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareCliCommandResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareIntegrateCliCommandParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.config.binding.BindingSuggestionOrigin;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AcceptedBindingSuggestionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiAgentIntegrationStateObservedParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiIntegrationAction;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiIntegrationActionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiIntegrationActionStatus;
+import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.AiIntegrationCliStateObservedParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.telemetry.FindingsFilteredParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttribute;
 import org.sonarsource.sonarlint.core.rpc.protocol.common.CleanCodeAttributeCategory;
@@ -125,10 +143,74 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
   void prepare() throws IOException {
     client.isIgnoredByScm = false;
     org.apache.commons.io.FileUtils.cleanDirectory(analysisDir.toFile());
-    mockWebServerExtension.addStringResponse("/api/system/status", "{\"status\": \"UP\", \"version\": \"9.9\", \"id\": \"xzy\"}");
+    mockWebServerExtension.addStringResponse("/api/system/status", "{\"status\": \"UP\", \"version\": \"2025.1\", \"id\": \"xzy\"}");
     mockWebServerExtension.addProtobufResponse("/api/settings/values.protobuf", Settings.Values.newBuilder().build());
     mockWebServerExtension.addStringResponse("/api/authentication/validate?format=json", "{\"valid\": true}");
     mockWebServerExtension.addProtobufResponse("/api/components/search.protobuf?qualifiers=TRK&ps=500&p=1", Components.SearchWsResponse.newBuilder().build());
+  }
+
+  @Test
+  void shouldExposeAiIntegrationOperations() throws Exception {
+    var integrationState = lsProxy.getIntegrationState(new GetAiIntegrationStateParams(AiIntegrationHost.VSCODE,
+      List.of(AiAgent.CLAUDE_CODE), AiIntegrationScope.GLOBAL, null)).get();
+    assertThat(integrationState.getAgents()).singleElement().satisfies(capability -> {
+      assertThat(capability.getAgent()).isEqualTo(AiAgent.CLAUDE_CODE);
+      assertThat(capability.isCliIntegrationSupported()).isTrue();
+    });
+
+    var cliCommand = lsProxy.prepareInstallCliCommand().get();
+    assertThat(cliCommand.isInteractive()).isTrue();
+
+    var content = "{\"mcpServers\": {\"other\": {\"command\": \"other\"}}}";
+    var inspection = lsProxy.inspectMcpConfiguration(new McpConfigurationInspectionParams(AiAgent.CLAUDE_CODE, content)).get();
+    assertThat(inspection.getState()).isEqualTo(McpConfigurationState.NOT_CONFIGURED);
+
+    var sonarMcpConfiguration = """
+      {
+        "command": "docker",
+        "args": ["run", "--init", "--pull=always", "-i", "--rm", "-e", "SONARQUBE_TOKEN", "-e", "SONARQUBE_URL", "-e", "SONARQUBE_IDE_PORT", "sonarsource/sonarqube-mcp"],
+        "env": {
+          "SONARQUBE_URL": "http://localhost",
+          "SONARQUBE_TOKEN": "test-token",
+          "SONARQUBE_IDE_PORT": "64120"
+        }
+      }
+      """;
+    var updatePlan = lsProxy.planMcpConfigurationUpdate(new McpConfigurationUpdateParams(AiAgent.CLAUDE_CODE, content, sonarMcpConfiguration)).get();
+    assertThat(updatePlan.getUpdatedContent()).contains("\"other\"", "\"sonarqube\"");
+
+    assertPreparedCliCommand(lsProxy.prepareAuthenticateCliCommand(
+      new PrepareAuthenticateCliCommandParams("https://next.sonarqube.com/sonarqube", null, null)));
+    assertPreparedCliCommand(lsProxy.prepareIntegrateCliCommand(new PrepareIntegrateCliCommandParams(AiAgent.CLAUDE_CODE)));
+  }
+
+  @Test
+  void aiIntegrationNotificationsShouldCallTelemetry() throws Exception {
+    assertThatCode(() -> lsProxy.aiIntegrationAction(new AiIntegrationActionParams(
+      AiIntegrationAction.INSTALL_CLI, AiIntegrationActionStatus.SUCCEEDED, AiAgent.CLAUDE_CODE, AiIntegrationHost.VSCODE)))
+      .doesNotThrowAnyException();
+    assertThatCode(() -> lsProxy.aiIntegrationCliStateObserved(new AiIntegrationCliStateObservedParams(
+      CliInstallationStatus.INSTALLED, CliAuthenticationStatus.AUTHENTICATED, AiIntegrationHost.VSCODE)))
+      .doesNotThrowAnyException();
+    assertThatCode(() -> lsProxy.aiAgentIntegrationStateObserved(new AiAgentIntegrationStateObservedParams(
+      AiAgent.CLAUDE_CODE, List.of(AiAgentDetectionSource.IDE), McpConfigurationState.NOT_CONFIGURED, AiIntegrationHost.VSCODE)))
+      .doesNotThrowAnyException();
+
+    // Round-trip so the server has consumed the notifications above before the JVM exits.
+    assertThat(lsProxy.prepareInstallCliCommand().get(60, SECONDS).isInteractive()).isTrue();
+  }
+
+  private static void assertPreparedCliCommand(CompletableFuture<PrepareCliCommandResponse> future) throws Exception {
+    try {
+      var response = future.get(60, SECONDS);
+      assertThat(response.getExecutable()).isNotBlank();
+      assertThat(response.getArguments()).isNotNull();
+    } catch (ExecutionException e) {
+      assertThat(e.getCause()).isInstanceOf(ResponseErrorException.class);
+      var responseError = ((ResponseErrorException) e.getCause()).getResponseError();
+      assertThat(responseError.getCode()).isEqualTo(ResponseErrorCode.InternalError.getValue());
+      assertThat(responseError.getMessage() + responseError.getData()).contains("A working SonarQube CLI installation is required");
+    }
   }
 
   @Test
@@ -501,7 +583,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
     awaitUntilAsserted(() -> assertThat(client.getDiagnostics(uri))
       .extracting(startLine(), startCharacter(), endLine(), endCharacter(), code(), Diagnostic::getSource, Diagnostic::getMessage, Diagnostic::getSeverity)
       .containsExactly(
-        tuple(0, 2, 0, 4, "css:S4658", "sonarqube", "Unexpected empty block", DiagnosticSeverity.Warning)));
+        tuple(0, 2, 0, 4, "css:S4658", "sonarqube", "Empty block", DiagnosticSeverity.Warning)));
   }
 
   @Test
@@ -885,6 +967,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void testCheckNewSqConnection() throws ExecutionException, InterruptedException {
+    mockSupportedServerVersion();
     var serverUrl = mockWebServerExtension.url("/");
     SonarLintExtendedLanguageServer.ConnectionCheckParams testParams = new SonarLintExtendedLanguageServer.ConnectionCheckParams(TOKEN, null, serverUrl, null);
     CompletableFuture<SonarLintExtendedLanguageClient.ConnectionCheckResult> result = lsProxy.checkConnection(testParams);
@@ -897,6 +980,7 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
 
   @Test
   void testCheckConnectionWithKnownConnection() throws ExecutionException, InterruptedException {
+    mockSupportedServerVersion();
     SonarLintExtendedLanguageServer.ConnectionCheckParams testParams = new SonarLintExtendedLanguageServer.ConnectionCheckParams(CONNECTION_ID);
     CompletableFuture<SonarLintExtendedLanguageClient.ConnectionCheckResult> result = lsProxy.checkConnection(testParams);
 
@@ -1173,6 +1257,10 @@ class LanguageServerMediumTests extends AbstractLanguageServerMediumTests {
   @Test
   void supportedLanguagesPanelCtaClickedShouldCallTelemetry() {
     assertThatCode(() -> lsProxy.supportedLanguagesPanelCtaClicked()).doesNotThrowAnyException();
+  }
+
+  private static void mockSupportedServerVersion() {
+    mockWebServerExtension.addStringResponse("/api/system/status", "{\"status\": \"UP\", \"version\": \"2025.1\", \"id\": \"xzy\"}");
   }
 
   @Override
