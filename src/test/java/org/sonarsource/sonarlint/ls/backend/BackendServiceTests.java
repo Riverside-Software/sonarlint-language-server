@@ -33,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.sonarsource.sonarlint.core.issue.IssueNotFoundException;
@@ -41,13 +42,15 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgent;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiAgentRpcService;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiIntegrationHost;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AiIntegrationScope;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AuthenticateCliWithConnectionParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AuthenticateCliWithConnectionResponse;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AuthenticateCliWithConnectionResponse.Status;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetAiIntegrationStateParams;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetHookScriptContentParams;
-import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.GetRuleFileContentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationInspectionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.McpConfigurationUpdateParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareAuthenticateCliCommandParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.PrepareIntegrateCliCommandParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.UninstallCliResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalysisRpcService;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.AnalyzeVCSChangedFilesParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.analysis.DidChangeAutomaticAnalysisSettingParams;
@@ -79,6 +82,7 @@ import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -320,6 +324,59 @@ class BackendServiceTests {
     verify(aiAgentService).prepareIntegrateCommand(integrateParams);
   }
 
+  @ParameterizedTest
+  @EnumSource(Status.class)
+  void shouldForwardCliAuthenticationResponse(Status status) {
+    var params = new AuthenticateCliWithConnectionParams("connection");
+    var response = new AuthenticateCliWithConnectionResponse(status, "diagnostic");
+    var future = CompletableFuture.completedFuture(response);
+    when(aiAgentService.authenticateCliWithConnection(params)).thenReturn(future);
+
+    var result = underTest.authenticateCliWithConnection(params);
+
+    assertThat(result).isSameAs(future).isCompletedWithValue(response);
+    verify(aiAgentService).authenticateCliWithConnection(params);
+  }
+
+  @ParameterizedTest
+  @EnumSource(UninstallCliResponse.Status.class)
+  void shouldForwardCliUninstallResponse(UninstallCliResponse.Status status) {
+    var response = new UninstallCliResponse(status, "reset output", "reset warning", "diagnostic");
+    var future = CompletableFuture.completedFuture(response);
+    when(aiAgentService.uninstallCli()).thenReturn(future);
+
+    assertThat(underTest.uninstallCli()).isSameAs(future).isCompletedWithValue(response);
+    verify(aiAgentService).uninstallCli();
+  }
+
+  @Test
+  void shouldPropagateCliUninstallFailure() {
+    var failure = new IllegalStateException("uninstall failed");
+    when(aiAgentService.uninstallCli()).thenReturn(CompletableFuture.failedFuture(failure));
+
+    assertThatThrownBy(() -> underTest.uninstallCli().join()).hasCause(failure);
+  }
+
+  @Test
+  void shouldPropagateCliAuthenticationFailure() {
+    var params = new AuthenticateCliWithConnectionParams("connection");
+    var failure = new IllegalStateException("authentication failed");
+    when(aiAgentService.authenticateCliWithConnection(params)).thenReturn(CompletableFuture.failedFuture(failure));
+
+    assertThatThrownBy(() -> underTest.authenticateCliWithConnection(params).join()).hasCause(failure);
+  }
+
+  @Test
+  void shouldCancelBackendCliAuthenticationFuture() {
+    var params = new AuthenticateCliWithConnectionParams("connection");
+    var future = new CompletableFuture<AuthenticateCliWithConnectionResponse>();
+    when(aiAgentService.authenticateCliWithConnection(params)).thenReturn(future);
+
+    underTest.authenticateCliWithConnection(params).cancel(true);
+
+    assertThat(future).isCancelled();
+  }
+
   @Test
   void shouldForwardMcpConfigurationInspectionRequestToBackend() {
     var params = new McpConfigurationInspectionParams(AiAgent.CURSOR, "{\"mcpServers\": {}}");
@@ -344,30 +401,6 @@ class BackendServiceTests {
     when(aiAgentService.getIntegrationState(params)).thenReturn(CompletableFuture.failedFuture(new IllegalStateException()));
 
     assertThat(underTest.getIntegrationState(params)).isCompletedExceptionally();
-  }
-
-  @Test
-  void shouldForwardMCPRuleFileRequestToBackend() {
-    var aiAgent = AiAgent.CURSOR;
-
-    var argumentCaptor = ArgumentCaptor.forClass(GetRuleFileContentParams.class);
-
-    underTest.getMCPRuleFileContent(new GetRuleFileContentParams(aiAgent));
-
-    verify(aiAgentService).getRuleFileContent(argumentCaptor.capture());
-    assertThat(argumentCaptor.getValue().getAiAgent()).isEqualTo(aiAgent);
-  }
-
-  @Test
-  void shouldForwardAiAgentHookScriptRequestToBackend() {
-    var aiAgent = AiAgent.WINDSURF;
-
-    var argumentCaptor = ArgumentCaptor.forClass(GetHookScriptContentParams.class);
-
-    underTest.getAiAgentHookScriptContent(new GetHookScriptContentParams(aiAgent));
-
-    verify(aiAgentService).getHookScriptContent(argumentCaptor.capture());
-    assertThat(argumentCaptor.getValue().getAiAgent()).isEqualTo(aiAgent);
   }
 
   @Test
