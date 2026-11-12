@@ -716,6 +716,13 @@ public interface SonarLintExtendedLanguageClient extends LanguageClient {
   @JsonRequest("getOpenEdgeConfig")
   CompletableFuture<GetOpenEdgeConfigResponse> getOpenEdgeConfig(String fileUri);
 
+  /**
+   * Wait for pending compilation of this file in the ABL language server (proparse/waitForCompilation).
+   * Returns true when nothing is pending or when compilation is done, false after timeout.
+   */
+  @JsonRequest("waitForOpenEdgeCompilation")
+  CompletableFuture<Boolean> waitForOpenEdgeCompilation(String fileUri);
+
   class GetOpenEdgeProjectConfig {
     private String projectRoot;
     private String sourceDirs;

@@ -643,6 +643,11 @@ public abstract class AbstractLanguageServerMediumTests {
     }
 
     @Override
+    public CompletableFuture<Boolean> waitForOpenEdgeCompilation(String fileUri) {
+      return CompletableFuture.completedFuture(true);
+    }
+
+    @Override
     public void browseTo(String link) {
       openedLinks.add(link);
     }

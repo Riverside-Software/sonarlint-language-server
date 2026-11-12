@@ -38,6 +38,9 @@ import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.util.Utils;
 
 public class OpenEdgeConfigCache {
+  // ABL LS gives up after 10 seconds, keep some margin for the round-trip through the client
+  private static final long WAIT_FOR_COMPILATION_TIMEOUT = 15;
+
   private final SonarLintExtendedLanguageClient client;
   private final OpenFilesCache openFilesCache;
   private final LanguageClientLogger logOutput;
@@ -89,6 +92,23 @@ public class OpenEdgeConfigCache {
           .ifPresent(isOE -> logOutput.debug("Cached OE config for file \"" + fileUri + "\""));
         return configOpt;
       });
+  }
+
+  /**
+   * Wait for pending compilation of this file in the ABL language server, so that analysis uses up-to-date rcode.
+   * Never fails: errors and timeouts are only logged.
+   */
+  public void waitForCompilation(URI fileUri) {
+    try {
+      var done = client.waitForOpenEdgeCompilation(fileUri.toString()).get(WAIT_FOR_COMPILATION_TIMEOUT, TimeUnit.SECONDS);
+      if (!Boolean.TRUE.equals(done)) {
+        logOutput.debug("Compilation of OpenEdge file \"" + fileUri + "\" not completed, analysis may use outdated rcode");
+      }
+    } catch (InterruptedException e) {
+      Utils.interrupted(e, logOutput);
+    } catch (Exception e) {
+      logOutput.debug("Unable to wait for compilation of OpenEdge file \"" + fileUri + "\": " + e.getMessage());
+    }
   }
 
   public Map<String, String> configureOpenEdgeProperties(List<URI> fileInTheSameModule,

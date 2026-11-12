@@ -93,6 +93,7 @@ public class AnalysisHelper {
           " was unable to query project configuration (classpath, source level, ...)", uri));
         clearIssueCacheAndPublishEmptyDiagnostics(uri);
       } else {
+        oeConfigCache.waitForCompilation(uri);
         oeFilesWithConfig.put(uri, oeConfigOpt.get());
       }
     });
