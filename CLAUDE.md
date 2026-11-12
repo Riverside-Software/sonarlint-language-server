@@ -23,7 +23,7 @@ Do this for each upstream tag (newer than the latest `OpenEdge-x.y` branch) that
      - text and omnisharp artifactItems commented out
      - `<distributionManagement>` pointing to `nexus.rssw.eu`
    - `EnabledLanguages.java`: keep the fork side (only `OPENEDGE` / `OPENEDGE_DB` standalone, `CONNECTED_ADDITIONAL_LANGUAGES = EnumSet.noneOf(...)`), ignore upstream language additions.
-   - Sanity check: `git diff <tag> --stat` should only show the usual OpenEdge delta (~19 files).
+   - Sanity check: `git diff <tag> --stat` should only show the usual OpenEdge delta (~22 files).
 5. Commit `SLCore a.b.99001`: set `<sonarlint.core.version>` to `a.b.99001`, where `a.b` is the major.minor of the SLCore version used by the tag. Check that `../sonarlint-core` has branch `OpenEdge-a.b` with version `a.b.99001`.
 6. Commit `Version x.y.99001`: set the project `<version>` to `x.y.99001` (also for patch tags: `6.0.2-SNAPSHOT` becomes `6.0.99001`).
 
