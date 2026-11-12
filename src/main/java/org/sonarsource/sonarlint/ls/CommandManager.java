@@ -88,6 +88,7 @@ import org.sonarsource.sonarlint.ls.connected.TaintVulnerabilitiesCache;
 import org.sonarsource.sonarlint.ls.domain.LSLanguage;
 import org.sonarsource.sonarlint.ls.domain.MQRModeDetails;
 import org.sonarsource.sonarlint.ls.domain.StandardModeDetails;
+import org.sonarsource.sonarlint.ls.file.OpenFilesCache;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
@@ -146,12 +147,13 @@ public class CommandManager {
   private final BackendServiceFacade backendServiceFacade;
   private final WorkspaceFoldersManager workspaceFoldersManager;
   private final OpenNotebooksCache openNotebooksCache;
+  private final OpenFilesCache openFilesCache;
   private final LanguageClientLogger logOutput;
 
   CommandManager(SonarLintExtendedLanguageClient client, SettingsManager settingsManager, ProjectBindingManager bindingManager,
     SonarLintTelemetry telemetry, TaintVulnerabilitiesCache taintVulnerabilitiesCache, IssuesCache issuesCache,
     HotspotsCache securityHotspotsCache, BackendServiceFacade backendServiceFacade, WorkspaceFoldersManager workspaceFoldersManager,
-    OpenNotebooksCache openNotebooksCache, LanguageClientLogger logOutput) {
+    OpenNotebooksCache openNotebooksCache, OpenFilesCache openFilesCache, LanguageClientLogger logOutput) {
     this.client = client;
     this.settingsManager = settingsManager;
     this.bindingManager = bindingManager;
@@ -162,6 +164,7 @@ public class CommandManager {
     this.backendServiceFacade = backendServiceFacade;
     this.workspaceFoldersManager = workspaceFoldersManager;
     this.openNotebooksCache = openNotebooksCache;
+    this.openFilesCache = openFilesCache;
     this.logOutput = logOutput;
   }
 
@@ -211,11 +214,13 @@ public class CommandManager {
         versionedOpenNotebook.get().toCellIssue(finding).quickFixes() :
         finding.quickFixes();
       cancelToken.checkCanceled();
+      // Version of the content that was analyzed, so that the client rejects quick fixes once the document has been modified
+      var analyzedVersion = isNotebookCellUri ? null : openFilesCache.getAnalyzedVersion(uri).orElse(null);
       quickFixes.forEach(fix -> {
         var newCodeAction = new CodeAction(SONARLINT_ACTION_PREFIX + fix.message());
         newCodeAction.setKind(CodeActionKind.QuickFix);
         newCodeAction.setDiagnostics(List.of(diagnostic));
-        newCodeAction.setEdit(newWorkspaceEdit(fix, null));
+        newCodeAction.setEdit(newWorkspaceEdit(fix, uri, analyzedVersion));
         newCodeAction.setCommand(new Command(fix.message(), SONARLINT_QUICK_FIX_APPLIED, List.of(ruleKey)));
         codeActions.add(Either.forRight(newCodeAction));
       });
@@ -276,11 +281,12 @@ public class CommandManager {
     }
   }
 
-  private static WorkspaceEdit newWorkspaceEdit(QuickFixDto fix, @Nullable Integer documentVersion) {
+  private static WorkspaceEdit newWorkspaceEdit(QuickFixDto fix, URI documentUri, @Nullable Integer documentVersion) {
     var edit = new WorkspaceEdit();
     edit.setDocumentChanges(
       fix.fileEdits().stream()
-        .map(fileEdit -> newLspDocumentEdit(fileEdit, documentVersion))
+        // Document version is only known for the analyzed document
+        .map(fileEdit -> newLspDocumentEdit(fileEdit, documentUri.equals(fileEdit.target()) ? documentVersion : null))
         .toList());
     return edit;
   }
