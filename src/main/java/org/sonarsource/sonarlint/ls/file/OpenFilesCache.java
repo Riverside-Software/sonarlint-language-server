@@ -35,6 +35,8 @@ public class OpenFilesCache {
   private final LanguageClientLogger lsLogOutput;
 
   private final Map<URI, VersionedOpenFile> openFilesPerFileURI = new ConcurrentHashMap<>();
+  // Version of the document content last submitted to the backend for analysis (i.e. the version issues refer to)
+  private final Map<URI, Integer> analyzedVersionPerFileURI = new ConcurrentHashMap<>();
 
   public OpenFilesCache(LanguageClientLogger lsLogOutput) {
     this.lsLogOutput = lsLogOutput;
@@ -55,6 +57,21 @@ public class OpenFilesCache {
 
   public void didClose(URI fileUri) {
     openFilesPerFileURI.remove(fileUri);
+    analyzedVersionPerFileURI.remove(fileUri);
+  }
+
+  /**
+   * Record that this version of the file content was submitted to the backend for analysis
+   */
+  public void didSubmitForAnalysis(VersionedOpenFile file) {
+    analyzedVersionPerFileURI.put(file.getUri(), file.getVersion());
+  }
+
+  /**
+   * @return Version of the document content issues refer to, if known
+   */
+  public Optional<Integer> getAnalyzedVersion(URI fileUri) {
+    return Optional.ofNullable(analyzedVersionPerFileURI.get(fileUri));
   }
 
   public Optional<VersionedOpenFile> getFile(URI fileUri) {

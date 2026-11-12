@@ -74,6 +74,7 @@ import org.eclipse.lsp4j.NotebookSelectorCell;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.ServerInfo;
 import org.eclipse.lsp4j.SetTraceParams;
+import org.eclipse.lsp4j.SaveOptions;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.TextDocumentSyncOptions;
 import org.eclipse.lsp4j.WorkspaceFoldersOptions;
@@ -280,7 +281,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     this.settingsManager.addListener((WorkspaceSettingsChangeListener) forcedAnalysisCoordinator);
     this.settingsManager.addListener((WorkspaceFolderSettingsChangeListener) forcedAnalysisCoordinator);
     this.commandManager = new CommandManager(client, settingsManager, bindingManager, telemetry, taintVulnerabilitiesCache,
-      issuesCache, securityHotspotsCache, backendServiceFacade, workspaceFoldersManager, openNotebooksCache, lsLogOutput);
+      issuesCache, securityHotspotsCache, backendServiceFacade, workspaceFoldersManager, openNotebooksCache, openFilesCache, lsLogOutput);
 
     this.branchManager = new WorkspaceFolderBranchManager(backendServiceFacade, lsLogOutput);
     vsCodeClient.setBranchManager(branchManager);
@@ -394,6 +395,8 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     var textDocumentSyncOptions = new TextDocumentSyncOptions();
     textDocumentSyncOptions.setOpenClose(true);
     textDocumentSyncOptions.setChange(TextDocumentSyncKind.Full);
+    // Analysis is triggered on save, content is already known through didChange
+    textDocumentSyncOptions.setSave(new SaveOptions(false));
     return textDocumentSyncOptions;
   }
 
@@ -467,6 +470,7 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
         var file = openFilesCache.didOpen(uri, params.getTextDocument().getLanguageId(), params.getTextDocument().getText(), params.getTextDocument().getVersion());
         CompletableFutures.computeAsync(cancelChecker -> {
           String configScopeId;
+          openFilesCache.didSubmitForAnalysis(file);
           moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(file);
           var maybeWorkspaceFolder = workspaceFoldersManager.findFolderForFile(uri);
           if (maybeWorkspaceFolder.isPresent()) {
@@ -486,17 +490,9 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
   @Override
   public void didChange(DidChangeTextDocumentParams params) {
     var uri = create(params.getTextDocument().getUri());
+    // VSCode sends us full file content in the change event. Content is only kept in cache, the backend is notified
+    // (and analysis triggered) on save
     openFilesCache.didChange(uri, params.getContentChanges().get(0).getText(), params.getTextDocument().getVersion());
-    Optional<VersionedOpenFile> file = openFilesCache.getFile(uri);
-    if (file.isEmpty()) {
-      lsLogOutput.warn("Illegal state: trying to update file that was not open");
-    } else {
-      // VSCode sends us full file content in the change event
-      CompletableFutures.computeAsync(cancelChecker -> {
-        moduleEventsProcessor.notifyBackendWithUpdatedContent(file.get());
-        return null;
-      });
-    }
   }
 
   @Override
@@ -517,7 +513,18 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
 
   @Override
   public void didSave(DidSaveTextDocumentParams params) {
-    // Nothin to do
+    var uri = create(params.getTextDocument().getUri());
+    Optional<VersionedOpenFile> file = openFilesCache.getFile(uri);
+    if (file.isEmpty()) {
+      lsLogOutput.debug(String.format("Skipping analysis of saved file not open in the editor: \"%s\"", uri));
+    } else {
+      // Saved content is the latest content received through didChange
+      CompletableFutures.computeAsync(cancelChecker -> {
+        openFilesCache.didSubmitForAnalysis(file.get());
+        moduleEventsProcessor.notifyBackendWithUpdatedContent(file.get());
+        return null;
+      });
+    }
   }
 
   @Override
@@ -1119,6 +1126,9 @@ public class SonarLintLanguageServer implements SonarLintExtendedLanguageServer,
     if (versionedOpenFile != null) {
       var workspaceFolder = workspaceFoldersManager.findFolderForFile(documentUri);
       CompletableFutures.computeAsync(cancelChecker -> {
+        if (notebookUriStr == null) {
+          openFilesCache.didSubmitForAnalysis(versionedOpenFile);
+        }
         moduleEventsProcessor.notifyBackendWithFileLanguageAndContent(versionedOpenFile);
         workspaceFolder.ifPresent(folder -> backendServiceFacade.getBackendService().analyzeFilesList(folder.getUri().toString(), List.of(documentUri)));
         if (params.triggeredByUser()) {
