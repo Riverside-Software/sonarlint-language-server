@@ -118,6 +118,7 @@ import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
 import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.progress.LSProgressMonitor;
+import org.sonarsource.sonarlint.ls.scopes.ConfigurationScope;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
 import org.sonarsource.sonarlint.ls.standalone.notifications.PromotionalNotifications;
 import org.sonarsource.sonarlint.ls.util.Utils;
@@ -273,7 +274,7 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
 
   @Override
   public void showIssue(String folderUri, IssueDetailsDto issueDetails) {
-    var maybeBinding = bindingManager.getBindingIfExists(URI.create(folderUri));
+    var maybeBinding = bindingManager.getBinding(URI.create(folderUri));
     if (maybeBinding.isPresent()) {
       logOutput.debug("Show issue with description");
       var projectBinding = maybeBinding.get();
@@ -490,9 +491,8 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
       .forEach(taintIssue -> taintVulnerabilitiesCache.removeTaintIssue(
         getFullFileUriFromFragments(folderUri, taintIssue.getIdeFilePath()).toString(), taintIssue.getSonarServerKey()));
 
-    workspaceFoldersManager.getFolder(URI.create(folderUri))
-      .map(workspaceFolderWrapper -> Objects.requireNonNull(bindingManager
-        .getServerConnectionSettingsFor(workspaceFolderWrapper.getSettings().getConnectionId())).isSonarCloudAlias())
+    bindingManager.getBinding(URI.create(folderUri))
+      .map(binding -> Objects.requireNonNull(bindingManager.getServerConnectionSettingsFor(binding.connectionId())).isSonarCloudAlias())
       .ifPresent(isSonarCloud -> updateTaintVulnerabilitiesCache(addedTaintVulnerabilitiesByFile, updatedTaintVulnerabilitiesByFile, folderUri, isSonarCloud));
   }
 
@@ -616,10 +616,13 @@ public class SonarLintVSCodeClient implements SonarLintRpcClientDelegate {
 
   @Override
   public void suggestConnection(Map<String, List<ConnectionSuggestionDto>> configScopesToConnectionSuggestions) {
-    if (configScopesToConnectionSuggestions.isEmpty()) {
+    var relevantSuggestions = configScopesToConnectionSuggestions.entrySet().stream()
+      .filter(entry -> bindingManager.getScopeById(entry.getKey()).map(ConfigurationScope::editable).orElse(false))
+      .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    if (relevantSuggestions.isEmpty()) {
       return;
     }
-    client.suggestConnection(new SuggestConnectionParams(configScopesToConnectionSuggestions));
+    client.suggestConnection(new SuggestConnectionParams(relevantSuggestions));
   }
 
   private static ArrayList<TaintIssue> dtosToTaintIssues(String configurationScopeId, List<TaintVulnerabilityDto> t, Boolean isSonarCloud) {

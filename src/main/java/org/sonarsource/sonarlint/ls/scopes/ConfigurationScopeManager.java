@@ -1,0 +1,345 @@
+/*
+ * SonarLint Language Server
+ * Copyright (C) SonarSource Sàrl
+ * mailto:info AT sonarsource DOT com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+package org.sonarsource.sonarlint.ls.scopes;
+
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.sonarsource.sonarlint.ls.backend.BackendService;
+import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
+import org.sonarsource.sonarlint.ls.connected.BindingSources;
+import org.sonarsource.sonarlint.ls.connected.Origin;
+import org.sonarsource.sonarlint.ls.connected.ProjectBinding;
+import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderLifecycleListener;
+import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
+import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
+import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
+import org.sonarsource.sonarlint.ls.util.CatchingRunnable;
+import org.sonarsource.sonarlint.ls.util.URIUtils;
+import org.sonarsource.sonarlint.ls.util.Utils;
+
+import static java.lang.String.format;
+
+/**
+ * Keeps the tree of configuration scopes declared to the backend: one scope per workspace folder, and the scopes
+ * below it that the binding sources declare. On every event it asks the sources what should exist, opens and closes
+ * the scopes that differ, rebinds the ones whose binding changed and remembers what it declared. Changes run one
+ * after the other on a single thread; the lookups read what was last declared, and only {@link #bindingOf} waits,
+ * bounded, for the first declaration of its folder.
+ */
+public class ConfigurationScopeManager implements WorkspaceFolderLifecycleListener {
+
+  private final WorkspaceFoldersManager foldersManager;
+  private final BindingSources sources;
+  private final BackendServiceFacade backendServiceFacade;
+  private final LanguageClientLogger logOutput;
+  private final ExecutorService executor;
+  private final Map<URI, FolderScopes> folders = new ConcurrentHashMap<>();
+  private final List<ConfigurationScopeListener> listeners = new CopyOnWriteArrayList<>();
+
+  public ConfigurationScopeManager(WorkspaceFoldersManager foldersManager, BindingSources sources, BackendServiceFacade backendServiceFacade,
+    LanguageClientLogger logOutput) {
+    this(Executors.newSingleThreadExecutor(Utils.threadFactory("SonarLint configuration scopes", false)), foldersManager, sources, backendServiceFacade, logOutput);
+  }
+
+  public ConfigurationScopeManager(ExecutorService executor, WorkspaceFoldersManager foldersManager, BindingSources sources, BackendServiceFacade backendServiceFacade,
+    LanguageClientLogger logOutput) {
+    this.executor = executor;
+    this.foldersManager = foldersManager;
+    this.sources = sources;
+    this.backendServiceFacade = backendServiceFacade;
+    this.logOutput = logOutput;
+  }
+
+  public void addListener(ConfigurationScopeListener listener) {
+    listeners.add(listener);
+  }
+
+  @Override
+  public void initialized(Collection<WorkspaceFolderWrapper> initial) {
+    initial.forEach(this::added);
+  }
+
+  @Override
+  public void added(WorkspaceFolderWrapper added) {
+    folders.computeIfAbsent(added.getUri(), uri -> new FolderScopes(added));
+    update(added);
+  }
+
+  @Override
+  public void removed(WorkspaceFolderWrapper removed) {
+    var state = folders.remove(removed.getUri());
+    if (state != null) {
+      state.firstDeclaration.complete(null);
+      executor.execute(new CatchingRunnable(
+        () -> close(state),
+        t -> logOutput.errorWithStackTrace(format("Failed to close the configuration scopes of folder %s", removed.getUri()), t)));
+    }
+  }
+
+  /**
+   * @return whether the scopes or their bindings changed
+   */
+  public CompletableFuture<Boolean> update(WorkspaceFolderWrapper folder) {
+    return updateScopes(folder).thenApply(changes -> !changes.isEmpty());
+  }
+
+  /**
+   * @return what the update did to each scope that differs
+   */
+  public CompletableFuture<List<ScopeChange>> updateAll() {
+    var updates = folders.values().stream().map(state -> updateScopes(state.folder)).toList();
+    return CompletableFuture.allOf(updates.toArray(new CompletableFuture[0]))
+      .thenApply(done -> updates.stream().flatMap(update -> update.join().stream()).toList());
+  }
+
+  private CompletableFuture<List<ScopeChange>> updateScopes(WorkspaceFolderWrapper folder) {
+    var state = folders.get(folder.getUri());
+    if (state == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+    return CompletableFuture.supplyAsync(() -> apply(state), executor)
+      .exceptionally(t -> {
+        logOutput.errorWithStackTrace(format("Failed to update the configuration scopes of folder %s", folder.getUri()), t);
+        state.firstDeclaration.complete(null);
+        return List.of();
+      });
+  }
+
+  /**
+   * The configuration scope of a file: the deepest declared scope containing it when its workspace folder has one,
+   * otherwise the folder's own scope, otherwise {@link BackendService#ROOT_CONFIGURATION_SCOPE}.
+   */
+  public String resolveConfigScopeId(URI fileUri) {
+    return findConfigScopeId(fileUri).orElse(BackendService.ROOT_CONFIGURATION_SCOPE);
+  }
+
+  /**
+   * The configuration scope of a file inside a workspace folder, empty for a file outside every folder.
+   */
+  public Optional<String> findConfigScopeId(URI fileUri) {
+    return foldersManager.findFolderForFile(fileUri).map(folder -> scopeIdOf(folder, fileUri));
+  }
+
+  public String scopeIdOf(WorkspaceFolderWrapper folder, URI fileUri) {
+    return stateOf(folder)
+      .flatMap(state -> scopeOf(state, fileUri))
+      .map(scope -> scope.uri().toString())
+      .orElse(folderScopeId(folder));
+  }
+
+  public Optional<ProjectBinding> bindingOf(WorkspaceFolderWrapper folder, URI fileUri) {
+    return stateOf(folder)
+      .flatMap(state -> {
+        awaitFirstDeclaration(state);
+        return scopeOf(state, fileUri);
+      })
+      .map(ConfigurationScope::binding);
+  }
+
+  public Optional<ConfigurationScope> scopeById(String configScopeId) {
+    return folders.values().stream()
+      .flatMap(state -> state.scopes.get().stream())
+      .filter(scope -> scope.uri().toString().equals(configScopeId))
+      .findFirst();
+  }
+
+  public Optional<ProjectBinding> bindingOfScope(String configScopeId) {
+    return scopeById(configScopeId).map(ConfigurationScope::binding);
+  }
+
+  public List<ConfigurationScope> boundScopes() {
+    return folders.values().stream()
+      .flatMap(state -> state.scopes.get().stream())
+      .filter(scope -> scope.binding() != null)
+      .toList();
+  }
+
+  public List<ConfigurationScope> unresolvedScopes() {
+    return folders.values().stream()
+      .flatMap(state -> state.scopes.get().stream())
+      .filter(scope -> scope.binding() == null && scope.unresolved() != null)
+      .toList();
+  }
+
+  public Stream<ProjectBinding> bindings() {
+    return boundScopes().stream().map(ConfigurationScope::binding);
+  }
+
+  public void shutdown() {
+    Utils.shutdownAndAwait(executor, true);
+  }
+
+  private boolean isSuperseded(FolderScopes state) {
+    return folders.get(state.folder.getUri()) != state;
+  }
+
+  private List<ScopeChange> apply(FolderScopes state) {
+    var folder = state.folder;
+    if (isSuperseded(state)) {
+      state.firstDeclaration.complete(null);
+      return List.of();
+    }
+    var declared = state.scopes.get();
+    var desired = desiredScopes(folder);
+    state.scopes.set(desired);
+    state.firstDeclaration.complete(null);
+    List<ScopeChange> changes;
+    try {
+      changes = declare(folder, declared, desired);
+    } catch (RuntimeException e) {
+      state.scopes.set(declared);
+      if (!declared.equals(desired)) {
+        notifyScopesChanged(List.of());
+      }
+      throw e;
+    }
+    if (!changes.isEmpty()) {
+      notifyScopesChanged(changes);
+    }
+    return changes;
+  }
+
+  private void notifyScopesChanged(List<ScopeChange> changes) {
+    listeners.forEach(listener -> listener.scopesChanged(changes));
+  }
+
+  private List<ConfigurationScope> desiredScopes(WorkspaceFolderWrapper folder) {
+    var declared = sources.scopesOf(folder);
+    if (declared.stream().anyMatch(scope -> scope.uri().equals(folder.getUri()))) {
+      return declared;
+    }
+    var origin = declared.isEmpty() ? Origin.SETTINGS : declared.get(0).origin();
+    var folderScope = new ConfigurationScope(folder.getUri(), folder.getLspFolder().getName(), ".", origin, null, null, folder.getSettings().getPathToCompileCommands());
+    return Stream.concat(Stream.of(folderScope), declared.stream()).toList();
+  }
+
+  private List<ScopeChange> declare(WorkspaceFolderWrapper folder, List<ConfigurationScope> declared, List<ConfigurationScope> desired) {
+    var backendService = backendServiceFacade.getBackendService();
+    var declaredByUri = byUri(declared);
+    var desiredByUri = byUri(desired);
+    var changes = new ArrayList<ScopeChange>();
+    declared.stream()
+      .filter(scope -> !desiredByUri.containsKey(scope.uri()))
+      .forEach(scope -> {
+        backendService.removeConfigurationScope(scope.uri().toString());
+        changes.add(new ScopeChange(scope, null));
+      });
+    desired.stream()
+      .filter(scope -> !declaredByUri.containsKey(scope.uri()))
+      .forEach(scope -> {
+        backendService.addConfigurationScope(scope.uri().toString(), parentIdOf(folder, scope), scope.name(), scope.binding(),
+          scope.editable(), !scope.editable());
+        changes.add(new ScopeChange(null, scope));
+      });
+    desired.stream()
+      .filter(scope -> declaredByUri.containsKey(scope.uri()) && scope.bindingStateDiffersFrom(declaredByUri.get(scope.uri())))
+      .forEach(scope -> {
+        var before = declaredByUri.get(scope.uri());
+        if (scope.bindingConfigurationDiffersFrom(before)) {
+          rebind(scope);
+        }
+        changes.add(new ScopeChange(before, scope));
+      });
+    return changes;
+  }
+
+  private void rebind(ConfigurationScope scope) {
+    var backendService = backendServiceFacade.getBackendService();
+    var binding = scope.binding();
+    if (binding == null) {
+      backendService.unbind(scope.uri().toString(), !scope.editable());
+    } else {
+      logOutput.info(format("Binding scope %s to projectKey=%s of connection '%s'", scope.uri(), binding.projectKey(), binding.connectionId()));
+      backendService.bind(scope.uri().toString(), binding);
+    }
+  }
+
+  private void close(FolderScopes state) {
+    var previous = state.scopes.getAndSet(List.of());
+    var changes = List.<ScopeChange>of();
+    try {
+      changes = declare(state.folder, previous, List.of());
+    } finally {
+      if (!previous.isEmpty()) {
+        notifyScopesChanged(changes);
+      }
+    }
+  }
+
+  private void awaitFirstDeclaration(FolderScopes state) {
+    try {
+      state.firstDeclaration.get(1, TimeUnit.MINUTES);
+    } catch (InterruptedException e) {
+      logOutput.debugWithStackTrace("Interrupted!", e);
+      Thread.currentThread().interrupt();
+    } catch (ExecutionException | TimeoutException e) {
+      logOutput.errorWithStackTrace(format("The configuration scopes of folder %s were not declared in time", state.folder.getUri()), e);
+    }
+  }
+
+  private static String parentIdOf(WorkspaceFolderWrapper folder, ConfigurationScope scope) {
+    return scope.uri().equals(folder.getUri()) ? BackendService.ROOT_CONFIGURATION_SCOPE : folderScopeId(folder);
+  }
+
+  private static String folderScopeId(WorkspaceFolderWrapper folder) {
+    return folder.getUri().toString();
+  }
+
+  private Optional<FolderScopes> stateOf(WorkspaceFolderWrapper folder) {
+    return Optional.ofNullable(folders.get(folder.getUri()));
+  }
+
+  private static Optional<ConfigurationScope> scopeOf(FolderScopes state, URI fileUri) {
+    return state.scopes.get().stream()
+      .filter(scope -> URIUtils.isAncestor(scope.uri(), fileUri))
+      .max(Comparator.comparingInt(scope -> scope.uri().getPath().length()));
+  }
+
+  private static Map<URI, ConfigurationScope> byUri(List<ConfigurationScope> scopes) {
+    return scopes.stream().collect(Collectors.toMap(ConfigurationScope::uri, Function.identity()));
+  }
+
+  private static final class FolderScopes {
+    private final WorkspaceFolderWrapper folder;
+    private final CompletableFuture<Void> firstDeclaration = new CompletableFuture<>();
+    private final AtomicReference<List<ConfigurationScope>> scopes = new AtomicReference<>(List.of());
+
+    private FolderScopes(WorkspaceFolderWrapper folder) {
+      this.folder = folder;
+    }
+  }
+}

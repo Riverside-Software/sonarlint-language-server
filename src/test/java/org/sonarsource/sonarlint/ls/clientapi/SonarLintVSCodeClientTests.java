@@ -115,6 +115,7 @@ import org.sonarsource.sonarlint.ls.backend.BackendService;
 import org.sonarsource.sonarlint.ls.backend.BackendServiceFacade;
 import org.sonarsource.sonarlint.ls.commands.ShowAllLocationsCommand;
 import org.sonarsource.sonarlint.ls.connected.DependencyRisksCache;
+import org.sonarsource.sonarlint.ls.connected.Origin;
 import org.sonarsource.sonarlint.ls.connected.ProjectBinding;
 import org.sonarsource.sonarlint.ls.connected.ProjectBindingManager;
 import org.sonarsource.sonarlint.ls.connected.TaintVulnerabilitiesCache;
@@ -125,6 +126,7 @@ import org.sonarsource.sonarlint.ls.domain.TaintIssue;
 import org.sonarsource.sonarlint.ls.embeddedserver.EmbeddedServerManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderBranchManager;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFolderWrapper;
+import org.sonarsource.sonarlint.ls.scopes.ConfigurationScope;
 import org.sonarsource.sonarlint.ls.folders.WorkspaceFoldersManager;
 import org.sonarsource.sonarlint.ls.settings.ServerConnectionSettings;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
@@ -308,6 +310,7 @@ class SonarLintVSCodeClientTests {
 
   @Test
   void shouldSuggestConnection() {
+    when(bindingManager.getScopeById("key")).thenReturn(Optional.of(editableScope()));
     var suggestions = new HashMap<String, List<ConnectionSuggestionDto>>();
     suggestions.put("key", List.of());
 
@@ -316,6 +319,45 @@ class SonarLintVSCodeClientTests {
     var captor = ArgumentCaptor.forClass(SuggestConnectionParams.class);
     verify(client).suggestConnection(captor.capture());
     assertThat(captor.getValue().getSuggestionsByConfigScopeId()).isEqualTo(suggestions);
+  }
+
+  @Test
+  void shouldNotSuggestConnectionForScopesWithAReadOnlyBinding() {
+    when(bindingManager.getScopeById("subProject")).thenReturn(Optional.of(readOnlyScope()));
+    when(bindingManager.getScopeById("folder")).thenReturn(Optional.of(editableScope()));
+    var suggestions = new HashMap<String, List<ConnectionSuggestionDto>>();
+    suggestions.put("subProject", List.of());
+    suggestions.put("folder", List.of());
+
+    underTest.suggestConnection(suggestions);
+
+    var captor = ArgumentCaptor.forClass(SuggestConnectionParams.class);
+    verify(client).suggestConnection(captor.capture());
+    assertThat(captor.getValue().getSuggestionsByConfigScopeId()).containsOnlyKeys("folder");
+  }
+
+  @Test
+  void shouldNotSuggestConnectionWhenEveryScopeHasAReadOnlyBinding() {
+    when(bindingManager.getScopeById("subProject")).thenReturn(Optional.of(readOnlyScope()));
+
+    underTest.suggestConnection(Map.of("subProject", List.of()));
+
+    verify(client, never()).suggestConnection(any());
+  }
+
+  @Test
+  void shouldNotSuggestConnectionForAScopeTheScopeManagerDoesNotKnow() {
+    underTest.suggestConnection(Map.of("gone", List.of()));
+
+    verify(client, never()).suggestConnection(any());
+  }
+
+  private static ConfigurationScope readOnlyScope() {
+    return new ConfigurationScope(URI.create("file:///repo/subProject/"), "subProject", "subProject", Origin.SONAR_CONFIG, null);
+  }
+
+  private static ConfigurationScope editableScope() {
+    return new ConfigurationScope(URI.create("file:///repo/"), "repo", ".", Origin.SETTINGS, null);
   }
 
   @Test
@@ -712,7 +754,7 @@ class SonarLintVSCodeClientTests {
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
       "issueKey", filePython, "this is wrong", "29.09.2023", "print('ddd')",
       false, List.of());
-    when(bindingManager.getBindingIfExists(fileUri))
+    when(bindingManager.getBinding(fileUri))
       .thenReturn(Optional.empty());
 
     underTest.showIssue(fileUri.toString(), issueDetailsDto);
@@ -730,7 +772,7 @@ class SonarLintVSCodeClientTests {
     var issueDetailsDto = new IssueDetailsDto(textRangeDto, "rule:S1234",
       "issueKey", filePython, "this is wrong", "29.09.2023", "print('ddd')",
       false, List.of());
-    when(bindingManager.getBindingIfExists(fileUri))
+    when(bindingManager.getBinding(fileUri))
       .thenReturn(Optional.of(new ProjectBinding("connectionId", "projectKey")));
 
     underTest.showIssue(fileUri.toString(), issueDetailsDto);
@@ -768,15 +810,13 @@ class SonarLintVSCodeClientTests {
   void shouldUpdateTaintsCacheOnTaintsChangedAndPublishDiagnostics() {
     var filePath = Path.of("filePath");
     var workspaceFoldersManager = mock(WorkspaceFoldersManager.class);
-    var workspaceFolderWrapper = mock(WorkspaceFolderWrapper.class);
-    var workspaceFolderSettings = mock(WorkspaceFolderSettings.class);
     var serverConnectionSettings = mock(ServerConnectionSettings.class);
     when(serverConnectionSettings.isSonarCloudAlias()).thenReturn(true);
-    when(workspaceFolderSettings.getConnectionId()).thenReturn("connectionId");
     when(bindingManager.getServerConnectionSettingsFor("connectionId")).thenReturn(serverConnectionSettings);
-    when(workspaceFolderWrapper.getSettings()).thenReturn(workspaceFolderSettings);
+    var fakeBinding = mock(ProjectBinding.class);
+    when(fakeBinding.connectionId()).thenReturn("connectionId");
+    when(bindingManager.getBinding(workspaceFolderPath.toUri())).thenReturn(Optional.of(fakeBinding));
     underTest.setWorkspaceFoldersManager(workspaceFoldersManager);
-    when(workspaceFoldersManager.getFolder(workspaceFolderPath.toUri())).thenReturn(Optional.of(workspaceFolderWrapper));
     var uuid1 = UUID.randomUUID();
     var uuid2 = UUID.randomUUID();
     var uuid3 = UUID.randomUUID();

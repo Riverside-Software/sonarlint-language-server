@@ -23,18 +23,15 @@ import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Function;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
-import org.eclipse.lsp4j.WorkspaceFolder;
 import org.sonarsource.sonarlint.core.rpc.protocol.SonarLintRpcServer;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AuthenticateCliWithConnectionParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.ai.AuthenticateCliWithConnectionResponse;
@@ -98,6 +95,8 @@ import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.CheckStatusCh
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.CheckStatusChangePermittedResponse;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.hotspot.OpenHotspotInBrowserParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.initialize.InitializeParams;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.log.LogLevel;
+import org.sonarsource.sonarlint.core.rpc.protocol.backend.log.SetLogLevelParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.AddIssueCommentParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.ChangeIssueStatusParams;
 import org.sonarsource.sonarlint.core.rpc.protocol.backend.issue.GetEffectiveIssueDetailsParams;
@@ -166,6 +165,10 @@ public class BackendService {
     }
   }
 
+  public void syncBackendLogLevel(LogLevel level) {
+    backend.getLogService().setLogLevel(new SetLogLevelParams(level));
+  }
+
   public void openHotspotInBrowser(OpenHotspotInBrowserParams params) {
     backend.getHotspotService().openHotspotInBrowser(params);
   }
@@ -197,42 +200,42 @@ public class BackendService {
       .toList();
   }
 
-  public ConfigurationScopeDto getConfigScopeDto(WorkspaceFolder added, Optional<ProjectBinding> bindingOptional) {
-    BindingConfigurationDto bindingConfigurationDto;
-    if (bindingOptional.isPresent()) {
-      ProjectBinding bindingWrapper = bindingOptional.get();
-      bindingConfigurationDto = new BindingConfigurationDto(bindingWrapper.connectionId(),
-        bindingWrapper.projectKey(), true);
-    } else {
-      bindingConfigurationDto = new BindingConfigurationDto(null, null, false);
+  private static BindingConfigurationDto toBindingConfigurationDto(@Nullable ProjectBinding binding, boolean bindingSuggestionDisabled) {
+    if (binding != null) {
+      return new BindingConfigurationDto(binding.connectionId(), binding.projectKey(), true);
     }
-    return new ConfigurationScopeDto(added.getUri(), ROOT_CONFIGURATION_SCOPE, true, added.getName(), bindingConfigurationDto);
+    return new BindingConfigurationDto(null, null, bindingSuggestionDisabled);
   }
 
-  public void removeWorkspaceFolder(String removedUri) {
-    var params = new DidRemoveConfigurationScopeParams(removedUri);
+  public void removeConfigurationScope(String configScopeId) {
+    var params = new DidRemoveConfigurationScopeParams(configScopeId);
     backend.getConfigurationService().didRemoveConfigurationScope(params);
   }
 
-  public void updateBinding(DidUpdateBindingParams params) {
+  public void bind(String configScopeId, ProjectBinding binding) {
+    updateBinding(new DidUpdateBindingParams(configScopeId, toBindingConfigurationDto(binding, true)));
+  }
+
+  public void unbind(String configScopeId, boolean bindingSuggestionDisabled) {
+    updateBinding(new DidUpdateBindingParams(configScopeId, toBindingConfigurationDto(null, bindingSuggestionDisabled)));
+  }
+
+  private void updateBinding(DidUpdateBindingParams params) {
     backend.getConfigurationService().didUpdateBinding(params);
   }
 
-  public void addWorkspaceFolders(List<WorkspaceFolder> added, Function<WorkspaceFolder, Optional<ProjectBinding>> bindingProvider) {
-    List<ConfigurationScopeDto> addedScopeDtos = added.stream()
-      .map(folder -> getConfigScopeDto(folder, bindingProvider.apply(folder)))
-      .toList();
-    var params = new DidAddConfigurationScopesParams(addedScopeDtos);
-    addConfigurationScopes(params);
+  public void addConfigurationScope(String configScopeId, String parentScopeId, String name, @Nullable ProjectBinding binding,
+    boolean bindable, boolean bindingSuggestionDisabled) {
+    var scope = new ConfigurationScopeDto(configScopeId, parentScopeId, bindable, name, toBindingConfigurationDto(binding, bindingSuggestionDisabled));
+    addConfigurationScopes(new DidAddConfigurationScopesParams(List.of(scope)));
   }
 
   void addConfigurationScopes(DidAddConfigurationScopesParams params) {
     backend.getConfigurationService().didAddConfigurationScopes(params);
   }
 
-  public CompletableFuture<GetEffectiveRuleDetailsResponse> getEffectiveRuleDetails(@Nullable String workspaceFolder, String ruleKey, String ruleContextKey) {
-    var workspaceOrRootScope = Optional.ofNullable(workspaceFolder).orElse(ROOT_CONFIGURATION_SCOPE);
-    var params = new GetEffectiveRuleDetailsParams(workspaceOrRootScope, ruleKey, ruleContextKey);
+  public CompletableFuture<GetEffectiveRuleDetailsResponse> getEffectiveRuleDetails(String configScopeId, String ruleKey, String ruleContextKey) {
+    var params = new GetEffectiveRuleDetailsParams(configScopeId, ruleKey, ruleContextKey);
     return getRuleDetails(params);
   }
 
@@ -422,8 +425,8 @@ public class BackendService {
     backend.getFileService().didUpdateFileSystem(new DidUpdateFileSystemParams(addedFiles, changedFiles, deletedFileUris));
   }
 
-  public CompletableFuture<ListAllResponse> getAllTaints(String folderUri) {
-    var params = new ListAllParams(folderUri, true);
+  public CompletableFuture<ListAllResponse> getAllTaints(String configScopeId) {
+    var params = new ListAllParams(configScopeId, true);
     return backend.getTaintVulnerabilityTrackingService().listAll(params);
   }
 
@@ -473,15 +476,13 @@ public class BackendService {
     backend.getAnalysisService().didChangePathToCompileCommands(params);
   }
 
-  public CompletableFuture<GetEffectiveIssueDetailsResponse> getEffectiveIssueDetails(@Nullable String workspaceFolder, UUID issueKey) {
-    var workspaceOrRootScope = Optional.ofNullable(workspaceFolder).orElse(ROOT_CONFIGURATION_SCOPE);
-    var params = new GetEffectiveIssueDetailsParams(workspaceOrRootScope, issueKey);
+  public CompletableFuture<GetEffectiveIssueDetailsResponse> getEffectiveIssueDetails(String configScopeId, UUID issueKey) {
+    var params = new GetEffectiveIssueDetailsParams(configScopeId, issueKey);
     return backend.getIssueService().getEffectiveIssueDetails(params);
   }
 
-  public CompletableFuture<SuggestFixResponse> suggestFix(@Nullable String workspaceFolder, UUID issueKey) {
-    var workspaceOrRootScope = Optional.ofNullable(workspaceFolder).orElse(ROOT_CONFIGURATION_SCOPE);
-    var params = new SuggestFixParams(workspaceOrRootScope, issueKey);
+  public CompletableFuture<SuggestFixResponse> suggestFix(String configScopeId, UUID issueKey) {
+    var params = new SuggestFixParams(configScopeId, issueKey);
     return backend.getAiCodeFixRpcService().suggestFix(params);
   }
 

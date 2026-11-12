@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.hotspot.RaisedHotspotDto;
 import org.sonarsource.sonarlint.core.rpc.protocol.client.issue.RaisedFindingDto;
@@ -40,8 +41,9 @@ import org.sonarsource.sonarlint.ls.log.LanguageClientLogger;
 import org.sonarsource.sonarlint.ls.notebooks.NotebookDiagnosticPublisher;
 import org.sonarsource.sonarlint.ls.notebooks.OpenNotebooksCache;
 import org.sonarsource.sonarlint.ls.openedge.OpenEdgeConfigCache;
+import org.sonarsource.sonarlint.ls.scopes.ConfigurationScope;
+import org.sonarsource.sonarlint.ls.scopes.ConfigurationScopeManager;
 import org.sonarsource.sonarlint.ls.settings.SettingsManager;
-import org.sonarsource.sonarlint.ls.settings.WorkspaceFolderSettings;
 
 import static java.lang.String.format;
 import static java.util.function.Function.identity;
@@ -59,12 +61,14 @@ public class AnalysisHelper {
   private final OpenNotebooksCache openNotebooksCache;
   private final NotebookDiagnosticPublisher notebookDiagnosticPublisher;
   private final OpenFilesCache openFilesCache;
+  private final ConfigurationScopeManager scopeManager;
 
   public AnalysisHelper(SonarLintExtendedLanguageClient client, LanguageClientLogger clientLogger,
     WorkspaceFoldersManager workspaceFoldersManager, OpenEdgeConfigCache oeConfigCache, SettingsManager settingsManager,
     IssuesCache issuesCache, HotspotsCache securityHotspotsCache, DiagnosticPublisher diagnosticPublisher,
     OpenNotebooksCache openNotebooksCache, NotebookDiagnosticPublisher notebookDiagnosticPublisher,
-    OpenFilesCache openFilesCache) {
+    OpenFilesCache openFilesCache, ConfigurationScopeManager scopeManager) {
+    this.scopeManager = scopeManager;
     this.client = client;
     this.clientLogger = clientLogger;
     this.workspaceFoldersManager = workspaceFoldersManager;
@@ -125,7 +129,7 @@ public class AnalysisHelper {
   public Map<String, String> getInferredAnalysisProperties(String configurationScopeId, List<URI> filesToAnalyzeUris) {
     // Need to analyze files outside any workspace folder as well
     var workspaceFolder = configurationScopeId.equals(ROOT_CONFIGURATION_SCOPE) ?
-      Optional.empty() : workspaceFoldersManager.getFolder(URI.create(configurationScopeId));
+      Optional.empty() : workspaceFoldersManager.findFolderForFile(URI.create(configurationScopeId));
     var settings = workspaceFolder.map(f -> ((WorkspaceFolderWrapper) f).getSettings())
       .orElseGet(() -> CompletableFutures.computeAsync(c -> settingsManager.getCurrentDefaultFolderSettings()).join());
 
@@ -133,7 +137,10 @@ public class AnalysisHelper {
 
     populateOEProperties(filesToAnalyzeUris, extraProperties);
 
-    populateCfamilyProperties(filesToAnalyzeUris, extraProperties, settings);
+    var pathToCompileCommands = scopeManager.scopeById(configurationScopeId)
+      .map(ConfigurationScope::pathToCompileCommands)
+      .orElse(settings.getPathToCompileCommands());
+    populateCfamilyProperties(filesToAnalyzeUris, extraProperties, pathToCompileCommands);
 
     return extraProperties;
   }
@@ -153,11 +160,10 @@ public class AnalysisHelper {
   }
 
   private void populateCfamilyProperties(List<URI> filesToAnalyzeUris, Map<String,
-    String> extraProperties, WorkspaceFolderSettings settings) {
+    String> extraProperties, @Nullable String pathToCompileCommands) {
     var cOrCppFiles = filesToAnalyzeUris.stream().map(openFilesCache::getFile).filter(Optional::isPresent).map(Optional::get)
       .filter(VersionedOpenFile::isCOrCpp).collect(Collectors.toMap(VersionedOpenFile::getUri, identity()));
 
-    var pathToCompileCommands = settings.getPathToCompileCommands();
     var isCompileCommandsRegularFile = false;
     if (pathToCompileCommands != null) {
       try {
